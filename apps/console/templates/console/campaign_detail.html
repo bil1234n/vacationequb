@@ -1,0 +1,54 @@
+{% extends "console/base.html" %}{% load console_tags %}
+{% block title %}{{ c.title }}{% endblock %}{% block heading %}{{ c.title }}{% endblock %}
+{% block crumbs %}<a href="{% url 'console:community' %}">Community Finance &amp; Impact</a> / Crowdfunding{% endblock %}
+{% block actions %}
+  {% if c.available_to_disburse > 0 %}<button class="btn gold" data-open="disburse-dialog">Record payout</button>{% endif %}
+  {% if c.status == 'LIVE' %}<form method="post" style="display:inline" data-confirm="Close this campaign? No more donations will be accepted.">{% csrf_token %}<input type="hidden" name="action" value="close"><button class="btn ghost">Close</button></form>
+  {% elif c.status == 'DRAFT' %}<form method="post" style="display:inline">{% csrf_token %}<input type="hidden" name="action" value="go_live"><button class="btn ghost">Go live</button></form>
+  {% elif c.status == 'CLOSED' or c.status == 'FUNDED' %}<form method="post" style="display:inline">{% csrf_token %}<input type="hidden" name="action" value="reopen"><button class="btn ghost">Reopen</button></form>{% endif %}
+  <a class="btn ghost" href="{% url 'console:campaign_edit' c.slug %}">Edit</a>
+{% endblock %}
+{% block content %}
+<div class="hero">
+  <div style="display:flex;gap:18px;align-items:center"><span class="avatar lg" style="background:var(--gold);color:var(--green)">🤲</span>
+    <div><div class="muted small">{{ c.get_category_display }} · {{ c.status|status_badge }} · started {{ c.starts_at|date:"d M Y" }}{% if c.ends_at %} · ends {{ c.ends_at|date:"d M Y" }}{% endif %}</div>
+      <h2>{{ c.beneficiary_name }}</h2>
+      <div class="muted">{% if c.beneficiary %}<a href="{% url 'console:user' c.beneficiary_id %}" style="color:#fff;text-decoration:underline">{{ c.beneficiary.full_name }} · {{ c.beneficiary.phone }}</a>{% else %}No Rihla account linked{% endif %}</div></div></div>
+  <div class="cf-progress"><div class="cf-progress-top"><b>{{ c.raised_amount|money }}</b><span>of {{ c.goal_amount|money }} · {{ c.progress_percent|floatformat:0 }}%</span></div><div class="cf-bar"><i style="width:{{ c.progress_percent|floatformat:0 }}%"></i></div></div>
+  <div class="stats"><div><b>{{ c.donors_count }}</b><span>Donors</span></div><div><b>{{ c.donations_count }}</b><span>Gifts</span></div><div><b>{{ c.disbursed_amount|compact }}</b><span>Paid out (ETB)</span></div><div><b>{{ c.available_to_disburse|compact }}</b><span>To pay out (ETB)</span></div><div><b>{{ c.fees_collected|compact }}</b><span>Platform fees (ETB)</span></div></div>
+</div>
+
+<div class="grid g-21 mt">
+  <div class="card"><div class="card-h"><h2>Gifts per day</h2></div><div class="chart-box sm"><canvas data-chart="daily"></canvas></div></div>
+  <div class="card"><div class="card-h"><h2>How people give</h2></div>
+    <dl class="kv">
+      <dt>Sadaqah (charity)</dt><dd>{{ kinds.SADAQAH.s|default:0|money }} · {{ kinds.SADAQAH.n }}</dd>
+      <dt>Hibah (gift)</dt><dd>{{ kinds.HIBAH.s|default:0|money }} · {{ kinds.HIBAH.n }}</dd>
+      <dt>Average gift</dt><dd>{{ avg|money }}</dd>
+      <dt>Platform fee</dt><dd>{{ c.platform_fee_percent|floatformat:"-2" }}% on top</dd>
+      <dt>Smallest gift</dt><dd>{{ c.min_donation }} ETB</dd>
+    </dl>
+    <div class="note-box" style="margin-top:12px;font-size:13px">A donor giving 100 ETB pays {{ 100|add:c.platform_fee_percent|floatformat:"-2" }} ETB: 100 ETB goes to this campaign, the rest is Rihla's fee.</div>
+  </div>
+</div>
+
+{% if c.story %}<div class="card mt"><div class="card-h"><h2>Story</h2></div><p style="margin:0;white-space:pre-line">{{ c.story }}</p></div>{% endif %}
+
+<div class="grid g-21 mt">
+  <div class="card"><div class="card-h"><h2>Gifts</h2><span class="muted small">latest 40</span></div>
+    <div class="table-wrap"><table class="t"><thead><tr><th>Donor</th><th>Type</th><th class="r">Gift</th><th class="r">Fee</th><th class="r">Paid</th><th>Status</th></tr></thead><tbody>
+    {% for d in donations %}<tr><td><a href="{% url 'console:user' d.user_id %}">{{ d.user.full_name }}</a>{% if d.is_anonymous %} <span class="badge b-grey">anonymous</span>{% endif %}<div class="small muted">{{ d.paid_at|default:d.created_at|date:"d M, H:i" }}{% if d.message %} · “{{ d.message }}”{% endif %}</div></td>
+      <td>{{ d.get_kind_display|cut:" (charity)"|cut:" (gift)" }}</td><td class="r num strong">{{ d.amount|money }}</td><td class="r num muted">{{ d.fee_amount|money }}</td><td class="r num">{{ d.total_amount|money }}</td><td>{{ d.status|status_badge }}</td></tr>
+    {% empty %}<tr><td colspan="6" class="empty">No gifts yet.</td></tr>{% endfor %}</tbody></table></div></div>
+  <div class="card"><div class="card-h"><h2>Payouts</h2>{% if c.available_to_disburse > 0 %}<button class="btn sm" data-open="disburse-dialog">+ Record</button>{% endif %}</div>
+    {% for p in disbursements %}<div style="padding:9px 0;border-bottom:1px solid var(--line)"><div style="display:flex;justify-content:space-between"><b>{{ p.paid_to }}</b><span class="num strong">{{ p.amount|money }}</span></div><div class="small muted">{{ p.paid_on|date:"d M Y" }} · {{ p.method }}{% if p.reference %} · {{ p.reference }}{% endif %}{% if p.recorded_by %} · by {{ p.recorded_by.full_name }}{% endif %}</div>{% if p.note %}<div class="small">{{ p.note }}</div>{% endif %}</div>
+    {% empty %}<div class="empty">Nothing paid out yet.</div>{% endfor %}</div>
+</div>
+
+<dialog class="modal" id="disburse-dialog"><form method="post">{% csrf_token %}<input type="hidden" name="action" value="disburse">
+  <div class="modal-h"><h3>Record a payout</h3><button type="button" class="x" data-close>&times;</button></div>
+  <div class="modal-b"><p class="small muted" style="margin-top:0">{{ c.available_to_disburse|money }} is available to pay out to {{ c.beneficiary_name }}.</p>
+    {% for bf in dform %}<div class="field">{{ bf.label_tag }}{{ bf }}</div>{% endfor %}</div>
+  <div class="modal-f"><button type="button" class="btn ghost" data-close>Cancel</button><button class="btn">Record payout</button></div>
+</form></dialog>
+{% endblock %}

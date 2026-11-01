@@ -1,0 +1,41 @@
+{% extends "console/base.html" %}{% load console_tags %}
+{% block title %}{{ f.flight_number }}{% endblock %}{% block heading %}{{ f.flight_number }} · {{ f.origin.iata }} → {{ f.destination.iata }}{% endblock %}
+{% block crumbs %}<a href="{% url 'console:flights' %}">Flights</a> / {{ f.flight_number }} {{ f.departure_time|date:"d M" }}{% endblock %}
+{% block actions %}<a class="btn" href="{% url 'console:flight_manifest' f.pk %}">Passenger manifest</a><a class="btn ghost" href="{% url 'console:flight_edit' f.pk %}">Edit flight &amp; fares</a>{% endblock %}
+{% block content %}
+<div class="hero">
+  <div><div class="muted small">{{ f.airline_name }} · {{ f.aircraft.name }}</div><h2>{{ f.origin.city }} → {{ f.destination.city }}</h2>
+    <div class="muted">Departs {{ f.departure_time|date:"D d M Y, H:i" }} · arrives {{ f.arrival_time|date:"H:i" }} · {{ f.duration_minutes }} min</div></div>
+  <div class="stats"><div><b>{{ load }}%</b><span>Load factor</span></div><div><b>{{ counts.BOOKED }}</b><span>Seats booked</span></div><div><b>{{ counts.LOCKED }}</b><span>Seats on hold</span></div><div><b>{{ revenue|compact }}</b><span>Revenue (ETB)</span></div></div>
+</div>
+<div class="grid g-3 mt">
+  <div class="card"><div class="card-h"><h2>Seat status</h2></div><div class="chart-box sm"><canvas data-chart="seats"></canvas></div></div>
+  <div class="card"><div class="card-h"><h2>Fare buckets</h2><span>Sold vs remaining</span></div><div class="chart-box sm"><canvas data-chart="fares"></canvas></div></div>
+  <div class="card"><div class="card-h"><h2>Booked seat positions</h2></div><div class="chart-box sm"><canvas data-chart="positions"></canvas></div></div>
+</div>
+<div class="grid g-2 mt">
+  <div class="card">
+    <div class="card-h"><h2>Seat map</h2><span>Live inventory</span></div>
+    {% for cabin in cabins %}
+      <div class="small strong" style="margin:8px 0;color:var(--green)">{{ cabin.cabin|title }}</div>
+      <div class="seatmap" style="grid-template-columns: 24px repeat({{ cabin.rows.0.cells|length }}, 22px)">
+        {% for row in cabin.rows %}<span class="small muted" style="line-height:22px">{{ row.row }}</span>{% for s in row.cells %}{% if s %}<span class="seat {{ s.status }}" title="{{ s.number }} · {{ s.get_position_display }} · {{ s.get_status_display }}{% if s.surcharge %} · +{{ s.surcharge|money }}{% endif %}"></span>{% else %}<span class="seat aisle"></span>{% endif %}{% endfor %}{% endfor %}
+      </div>
+    {% endfor %}
+    <div class="seat-legend"><span><i></i>Available</span><span><i style="background:var(--green);border-color:var(--green)"></i>Booked</span><span><i style="background:var(--gold);border-color:var(--gold)"></i>On hold</span><span><i style="background:#D5DDD9;border-color:#D5DDD9"></i>Blocked</span></div>
+  </div>
+  <div class="card">
+    <div class="card-h"><h2>Fare classes</h2><span>Price updates with demand &amp; time</span></div>
+    <div class="table-wrap"><table class="t"><thead><tr><th>Fare</th><th class="r">Base</th><th class="r">Now</th><th>Sold</th><th>Rules</th></tr></thead><tbody>
+    {% for fc in fares %}<tr><td class="strong" style="min-width:150px">{{ fc.name }}<div class="small muted">{{ fc.get_cabin_display }} · {{ fc.code }}</div></td>
+      <td class="r num">{{ fc.base_fare|money }}</td><td class="r num strong">{{ fc.now_price|money }}</td>
+      <td><div class="bar" style="width:90px"><i style="width:{{ fc.load }}%"></i></div><span class="small muted">{{ fc.seats_sold }}/{{ fc.seats_allocated }}</span></td>
+      <td class="small">{{ fc.checked_baggage_kg }} kg · {% if fc.refundable %}refundable{% else %}non-refundable{% endif %}</td></tr>{% endfor %}
+    </tbody></table></div>
+  </div>
+</div>
+<div class="card mt"><div class="card-h"><h2>Bookings on this flight</h2></div>
+  <div class="table-wrap"><table class="t"><thead><tr><th>Ref</th><th>Customer</th><th>Fare</th><th>Pax</th><th>Status</th><th class="r">Total</th></tr></thead><tbody>
+  {% for b in bookings %}<tr><td><a class="mono strong" href="{% url 'console:booking' b.reference %}">{{ b.reference }}</a></td><td>{{ b.user.full_name }}</td><td>{{ b.fare_class.name }}</td><td>{{ b.pax }}</td><td>{{ b.status|status_badge }}</td><td class="r num">{{ b.total_amount|money }}</td></tr>
+  {% empty %}<tr><td colspan="6" class="empty">No bookings yet.</td></tr>{% endfor %}</tbody></table></div></div>
+{% endblock %}

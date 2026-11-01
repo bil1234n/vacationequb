@@ -1,0 +1,67 @@
+{% extends "console/base.html" %}{% load console_tags %}
+{% block title %}{{ title }}{% endblock %}{% block heading %}{{ title }}{% endblock %}{% block crumbs %}{{ crumbs }}{% endblock %}
+{% block content %}
+<form method="post" class="form-page" novalidate>{% csrf_token %}
+  {% if intro %}<div class="msg info">{{ intro }}</div>{% endif %}
+  {% if form.non_field_errors %}<div class="msg error">{{ form.non_field_errors|join:" " }}</div>{% endif %}
+  {% if form.errors or formset.total_error_count %}<div class="msg error">Please fix the highlighted fields below.</div>{% endif %}
+  {% for title, help, names in form.sections %}
+  <section class="card form-section">
+    {% if title or help %}<div class="form-section-h">{% if title %}<h2>{{ title }}</h2>{% endif %}{% if help %}<p class="muted">{{ help }}</p>{% endif %}</div>{% endif %}
+    <div class="form-grid">
+      {% for name in names %}{% with bf=form|field:name %}{% if bf %}{% include "console/_field.html" with bf=bf %}{% endif %}{% endwith %}{% endfor %}
+    </div>
+    {% if form.calc_summary %}<div class="calc-summary" data-calc-summary hidden></div>{% endif %}
+  </section>
+  {% endfor %}
+  {% if form.more_sections %}
+  <details class="card form-section more-section" {% if form|more_has_errors %}open{% endif %}>
+    <summary><span><b>{{ form.more_title|default:"More settings" }}</b>{% if form.more_help %}<span class="muted small"> · {{ form.more_help }}</span>{% endif %}</span>
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></summary>
+    <div class="form-grid" style="margin-top:18px">
+      {% for name in form.more_sections %}{% with bf=form|field:name %}{% if bf %}{% include "console/_field.html" with bf=bf %}{% endif %}{% endwith %}{% endfor %}
+    </div>
+  </details>
+  {% endif %}
+
+  {% if formset %}
+  <section class="card form-section">
+    <div class="form-section-h"><h2>Fare classes</h2><p class="muted">Seats allocated per cabin can't exceed the aircraft's seats. Prices change automatically with demand and days to departure.</p></div>
+    {{ formset.management_form }}
+    {% if formset.non_form_errors %}<div class="msg error">{{ formset.non_form_errors|join:" " }}</div>{% endif %}
+    <div class="fares">
+    {% for ff in formset %}
+      <div class="fare-card {% if ff.errors %}has-error{% endif %}">
+        {% for hidden in ff.hidden_fields %}{{ hidden }}{% endfor %}
+        <div class="fare-head">
+          <span class="fare-no">{{ forloop.counter }}</span>
+          <span class="strong">{% if ff.instance.pk %}{{ ff.instance.name }}{% else %}Fare {{ forloop.counter }}{% endif %}</span>
+          {% if ff.instance.pk %}<span class="small muted">· {{ ff.instance.seats_sold }} sold</span>
+            <label class="fare-remove">{{ ff.DELETE }} Remove</label>{% else %}<span class="small muted">· rows you leave untouched are skipped</span>{% endif %}
+        </div>
+        {% if ff.non_field_errors %}<div class="msg error">{{ ff.non_field_errors|join:" " }}</div>{% endif %}
+        <div class="fare-grid">
+          {% for name in "cabin code name base_fare taxes seats_allocated checked_baggage_kg cabin_baggage_kg change_fee"|split %}
+            {% with bf=ff|field:name %}<div class="field {% if bf.errors %}has-error{% endif %} {% if name == 'name' %}span2{% endif %}"><label for="{{ bf.id_for_label }}">{{ bf.label }}</label>{{ bf }}{{ bf.errors }}</div>{% endwith %}
+          {% endfor %}
+        </div>
+        <div class="fare-flags">
+          {% with bf=ff.refundable %}{% include "console/_field.html" with bf=bf %}{% endwith %}
+          {% with bf=ff.free_seat_selection %}{% include "console/_field.html" with bf=bf %}{% endwith %}
+        </div>
+      </div>
+    {% endfor %}
+    </div>
+  </section>
+  {% endif %}
+
+  <div class="form-actions">
+    {% if delete_url %}<button class="btn danger" type="submit" form="delete-form">Delete</button>{% endif %}
+    <span class="grow"></span>
+    <a class="btn ghost" href="{{ cancel }}">Cancel</a>
+    {% if not obj and form.create_another %}<button class="btn ghost" type="submit" name="_another" value="1">Create &amp; create another</button>{% endif %}
+    <button class="btn" type="submit">{% if obj %}Save changes{% else %}Create{% endif %}</button>
+  </div>
+</form>
+{% if delete_url %}<form id="delete-form" method="post" action="{{ delete_url }}" data-confirm="Delete this permanently?">{% csrf_token %}</form>{% endif %}
+{% endblock %}

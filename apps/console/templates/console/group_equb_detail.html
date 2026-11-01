@@ -1,0 +1,51 @@
+{% extends "console/base.html" %}{% load console_tags %}
+{% block title %}{{ t.name }}{% endblock %}{% block heading %}{{ t.name }}{% endblock %}
+{% block crumbs %}<a href="{% url 'console:group_equbs' %}">Group Equbs</a> / {{ t.get_kind_display }}{% endblock %}
+{% block actions %}
+  {% if can_manage %}<form method="post" data-confirm="Make a new invite code? The old one stops working.">{% csrf_token %}<input type="hidden" name="action" value="new_code"><button class="btn ghost">New invite code</button></form>
+  <form method="post" data-confirm="Close this group? Everyone in it leaves the Equb (nothing is charged).">{% csrf_token %}<input type="hidden" name="action" value="close"><button class="btn danger">Close group</button></form>{% endif %}
+  <a class="btn ghost" href="{% url 'console:equb' t.equb.slug %}">Open the Equb</a>
+{% endblock %}
+{% block content %}
+<div class="hero">
+  <div><div class="muted small">{{ t.get_kind_display }} · Group Equb{% if not t.is_active %} · <b>closed</b>{% endif %}</div>
+    <h2>{{ t.equb.name }}</h2>
+    <div class="muted">{{ t.equb.contribution_amount|money }} per place {{ t.equb.every }} · owner <a href="{% url 'console:user' t.owner_id %}" style="color:inherit;text-decoration:underline">{{ t.owner.full_name }}</a> {{ t.owner.phone|tel }}</div>
+    <div style="margin-top:10px">Invite code <span class="code-pill">{{ t.invite_code }}</span></div>
+    {% if t.description %}<p class="muted small" style="margin-top:10px">{{ t.description }}</p>{% endif %}</div>
+  <div class="stats"><div><b>{{ info.members_count }}</b><span>Places</span></div><div><b>{{ info.dependents_count }}</b><span>Responsibility</span></div>
+    <div><b>{{ info.equb_free_places }}</b><span>Free in Equb</span></div><div><b>{{ t.equb.get_status_display }}</b><span>Equb status</span></div></div>
+</div>
+
+<div class="grid g-21 mt">
+  <div class="card">
+    <div class="card-h"><h2>Members</h2><span>{{ live|length }} in the Equb</span></div>
+    <div class="table-wrap"><table class="t"><thead><tr><th>#</th><th>Name</th><th>Phone</th><th>Role</th><th class="r">Paid</th><th>Status</th><th></th></tr></thead><tbody>
+    {% for m in members %}<tr class="{% if m.status == 'LEFT' %}muted{% endif %}">
+      <td class="num">{{ m.position }}</td>
+      <td><a class="strong" href="{% url 'console:equb_member' m.pk %}">{{ m.display_name }}</a>{% if m.is_dependent %}<div class="small muted">Responsibility person · paid by {{ m.user.full_name }}</div>{% endif %}</td>
+      <td class="small">{% if m.is_dependent %}{{ m.dependent_phone|default:"—" }}{% else %}{{ m.user.phone|tel }}{% endif %}</td>
+      <td>{% if m.user_id == t.owner_id and not m.is_dependent %}<span class="badge b-gold">★ Owner</span>{% elif m.is_dependent %}<span class="badge b-grey">Responsibility</span>{% else %}<span class="badge b-green">Member</span>{% endif %}{% if m.has_won %} <span class="badge b-gold">🏆{% if m.won_round %} R{{ m.won_round.number }}{% endif %}</span>{% endif %}</td>
+      <td class="r num">{{ m.total_paid|money }}</td><td>{{ m.status|status_badge }}</td>
+      <td class="r">{% if can_manage and m.status != 'LEFT' %}{% if m.is_dependent or m.user_id != t.owner_id %}<form method="post" data-confirm="Remove {{ m.display_name }} from the group?">{% csrf_token %}<input type="hidden" name="action" value="remove"><input type="hidden" name="membership" value="{{ m.pk }}"><button class="btn ghost xs">Remove</button></form>{% endif %}{% endif %}</td></tr>
+    {% endfor %}</tbody></table></div>
+  </div>
+  <div>
+    {% if can_manage %}
+    <div class="card"><div class="card-h"><h2>Add a member</h2></div>
+      <form method="post">{% csrf_token %}<input type="hidden" name="action" value="add_member">
+        <div class="field"><label>Customer phone</label><input type="text" name="phone" placeholder="0911223344" required></div>
+        <button class="btn" style="margin-top:10px">Add to the group</button></form></div>
+    <div class="card mt"><div class="card-h"><h2>Add a responsibility person</h2></div>
+      <p class="small muted" style="margin-top:0">Someone without the app. {{ t.owner.first_name|default:t.owner.full_name }} pays their contributions.</p>
+      <form method="post">{% csrf_token %}<input type="hidden" name="action" value="add_dependent">
+        <div class="field"><label>Name</label><input type="text" name="name" maxlength="120" required></div>
+        <div class="field"><label>Phone (optional)</label><input type="text" name="phone" maxlength="20"></div>
+        <button class="btn" style="margin-top:10px">Add person</button></form></div>
+    {% else %}
+    <div class="card"><p class="small muted" style="margin:0">{% if not t.is_active %}This group was closed.{% else %}The Equb has started, so the group can no longer change. Payments and draws are on the <a href="{% url 'console:equb' t.equb.slug %}">Equb page</a>.{% endif %}</p></div>
+    {% endif %}
+    <div class="card mt"><dl class="kv"><dt>Created</dt><dd>{{ t.created_at|date:"d M Y, H:i" }}</dd><dt>Created by</dt><dd>{{ t.created_by.full_name|default:"—" }}</dd></dl></div>
+  </div>
+</div>
+{% endblock %}

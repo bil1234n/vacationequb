@@ -1,0 +1,52 @@
+{% extends "console/base.html" %}{% load console_tags %}
+{% block title %}Call centre{% endblock %}{% block heading %}Call centre{% endblock %}{% block crumbs %}Equb · members {{ rules.call_after_days }}+ days overdue{% endblock %}
+{% block actions %}<a class="btn ghost" href="{% url 'console:equb_collections' %}">Collections</a><a class="btn ghost" href="{% url 'console:terminations' %}">Terminations</a>{% endblock %}
+{% block content %}
+<div class="tabs">
+  {% for key, label in tabs %}<a href="{% qs tab=key page=None %}" class="{% if tab == key %}on{% endif %}">{{ label }} <span class="count {% if key == 'broken' and counts|get_item:key %}alert{% endif %}">{{ counts|get_item:key }}</span></a>{% endfor %}
+</div>
+<form class="toolbar" method="get"><input type="hidden" name="tab" value="{{ tab }}">
+  <input class="grow" type="search" name="q" value="{{ q }}" placeholder="Search name, phone or pool…">
+  <select name="pool"><option value="">All pools</option>{% for p in pool_choices %}<option value="{{ p.id }}" {% if pool == p.id|stringformat:"s" %}selected{% endif %}>{{ p.name }}</option>{% endfor %}</select>
+  <button class="btn" type="submit">Filter</button>{% if q or pool %}<a class="btn ghost" href="?tab={{ tab }}">Reset</a>{% endif %}
+</form>
+
+<form method="post" class="card">{% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}">
+  <div class="bulkbar">
+    <label class="check-row" style="margin:0"><input type="checkbox" data-check-all> Select all</label>
+    <span class="small muted">{{ page.paginator.count }} member{{ page.paginator.count|pluralize }} · {{ owed_total|money }} owed</span><span class="grow"></span>
+    <button class="btn ghost sm" name="action" value="mark_called">Mark called</button>
+    <button class="btn ghost sm" name="action" value="mark_uncalled">Mark uncalled</button>
+    <button class="btn danger sm" name="action" value="send_termination" data-confirm-click="Send the selected members to the termination list?">Send to termination</button>
+  </div>
+  <div class="table-wrap" style="margin-top:0"><table class="t">
+    <thead><tr><th class="tight"></th><th>Member</th><th>Pool</th><th>Overdue</th><th class="r">Owes</th><th>Last call</th><th>Feedback</th><th class="r">Call status</th></tr></thead>
+    <tbody>{% for r in page %}<tr class="{% if r.s.critical %}critical{% endif %}">
+      <td class="tight"><input type="checkbox" name="ids" value="{{ r.m.pk }}"></td>
+      <td><a class="strong" href="{% url 'console:equb_member' r.m.pk %}">{{ r.m.user.full_name }}</a><div class="small">{{ r.m.user.phone|tel }}</div>{% if r.s.critical %}<span class="badge b-red">Won R{{ r.s.won_round }} – owes</span>{% endif %}</td>
+      <td class="small">{{ r.m.group.name }}<div class="muted">{{ r.s.contribution|money }} / round</div></td>
+      <td>{{ r.s.days_overdue|days_badge }}<div class="small muted">{{ r.s.missed_rounds }} round{{ r.s.missed_rounds|pluralize }} · {{ r.s.status_label }}</div></td>
+      <td class="r num strong">{{ r.s.arrears|money }}</td>
+      <td class="small">{{ r.last|outcome_badge }}{% if r.last %}<div class="muted">{{ r.last.created_at|date:"d M" }}{% if r.last.promised_date %} · pay by {{ r.last.promised_date|date:"d M" }}{% endif %}</div>{% endif %}</td>
+      <td class="small" style="max-width:220px">{{ r.last.feedback|default:""|truncatechars:80 }}</td>
+      <td class="r"><div class="actions">
+        <button type="button" class="btn ghost xs" data-open="call-dialog" data-fill='{"membership":"{{ r.m.pk }}","who":"{{ r.m.user.full_name|escapejs }}","phone":"{{ r.m.user.phone }}","owed":"{{ r.s.arrears|money }}"}'>Feedback</button>
+        <button class="btn {% if r.m.called_at %}called{% else %}uncalled{% endif %} xs" name="action" value="toggle_called" formnovalidate onclick="this.form.membership.value='{{ r.m.pk }}'">{% if r.m.called_at %}Called ✓{% else %}Uncalled{% endif %}</button>
+      </div></td></tr>
+    {% empty %}<tr><td colspan="8" class="empty">Nobody to call here. {% if tab != 'behind' %}<a href="?tab=behind">See everyone behind →</a>{% endif %}</td></tr>{% endfor %}</tbody>
+  </table></div>
+  <input type="hidden" name="membership" value="">
+  {% include "console/_pagination.html" %}
+</form>
+
+<dialog class="modal" id="call-dialog"><form method="post">{% csrf_token %}<input type="hidden" name="action" value="log_call"><input type="hidden" name="membership"><input type="hidden" name="next" value="{{ request.get_full_path }}">
+  <div class="modal-h"><h3>Call feedback – <span data-text="who"></span></h3><button type="button" class="x" data-close>&times;</button></div>
+  <div class="modal-b">
+    <p class="small muted" style="margin-top:0">Phone <span data-text="phone" class="mono"></span> · owes <span data-text="owed"></span>. Saving marks the member as called.</p>
+    <div class="field"><label>Outcome</label><select name="outcome">{% for v, l in outcomes %}<option value="{{ v }}">{{ l }}</option>{% endfor %}</select></div>
+    <div class="field" data-promise><label>Promised to pay by</label><input type="date" name="promised_date" min="{{ today|date:'Y-m-d' }}"></div>
+    <div class="field"><label>Feedback</label><textarea name="feedback" rows="3" placeholder="What did the member say?"></textarea></div>
+  </div>
+  <div class="modal-f"><button type="button" class="btn ghost" data-close>Cancel</button><button class="btn">Save feedback</button></div>
+</form></dialog>
+{% endblock %}

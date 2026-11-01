@@ -1,0 +1,53 @@
+{% extends "admin/base.html" %}{% load static %}
+{% block title %}{% if subtitle %}{{ subtitle }} | {% endif %}{{ title }} · Rihla data admin{% endblock %}
+{% block extrastyle %}{{ block.super }}
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root, html[data-theme="light"], html[data-theme="dark"], html[data-theme="auto"] {
+    --primary: #0F382B; --secondary: #1B4D3E; --accent: #C9A227; --primary-fg: #fff;
+    --body-fg: #0D1F18; --body-bg: #fff; --body-quiet-color: #5B6F66; --body-loud-color: #0D1F18;
+    --header-color: #E7F0EC; --header-branding-color: #fff; --header-bg: #0F382B; --header-link-color: #fff;
+    --breadcrumbs-fg: #5B6F66; --breadcrumbs-link-fg: #1B4D3E; --breadcrumbs-bg: #F3F8F5;
+    --link-fg: #1B4D3E; --link-hover-color: #0F382B; --link-selected-fg: #0F382B;
+    --hairline-color: #E1EAE5; --border-color: #D5E0DA; --error-fg: #C0392B;
+    --message-success-bg: #E7F0EC; --message-warning-bg: #FBF5E1; --message-error-bg: #FCEDEB;
+    --darkened-bg: #F6F9F7; --selected-bg: #E7F0EC; --selected-row: #F3F8F5;
+    --button-fg: #fff; --button-bg: #0F382B; --button-hover-bg: #1B4D3E;
+    --default-button-bg: #C9A227; --default-button-hover-bg: #B08C1C;
+    --close-button-bg: #5B6F66; --close-button-hover-bg: #0F382B; --delete-button-bg: #C0392B; --delete-button-hover-bg: #A02F23;
+    --object-tools-fg: #fff; --object-tools-bg: #1B4D3E; --object-tools-hover-bg: #0F382B;
+    --font-family-primary: Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    color-scheme: light;
+  }
+  body { background: #F6F9F7; }
+  #header { padding: 14px 32px; border-bottom: 3px solid #C9A227; }
+  #branding h1 { font-weight: 700; font-size: 18px; }
+  #branding h1 a { display: inline-flex; align-items: center; gap: 10px; }
+  #branding .mark { width: 30px; height: 30px; border-radius: 8px; background: #C9A227; color: #0F382B; display: inline-grid; place-items: center; font-weight: 800; }
+  #user-tools { font-weight: 500; letter-spacing: 0; text-transform: none; font-size: 13px; }
+  .theme-toggle { display: none !important; }
+  div.breadcrumbs { padding: 12px 32px; border-bottom: 1px solid #E1EAE5; }
+  #content { padding: 24px 32px; }
+  .module, #changelist .changelist-form-container, fieldset.module { border-radius: 12px; overflow: hidden; border: 1px solid #E1EAE5; background: #fff; }
+  .module h2, .module caption, .inline-group h2 { background: #F3F8F5; color: #0F382B; font-weight: 700; text-transform: none; letter-spacing: 0; font-size: 14px; padding: 12px 16px; }
+  .module caption, .module caption a, #nav-sidebar caption, #nav-sidebar caption a, .app-list caption a.section {
+    color: #0F382B !important; background: #F3F8F5 !important; font-weight: 700; text-transform: none; letter-spacing: 0; }
+  #nav-sidebar { background: #fff; border-right: 1px solid #E1EAE5; }
+  #nav-sidebar .current-model { background: #E7F0EC; }
+  .button, input[type=submit], input[type=button], .submit-row input, a.button { border-radius: 8px; font-weight: 600; padding: 9px 16px; }
+  .submit-row { border-radius: 12px; background: #F3F8F5; border: 1px solid #E1EAE5; }
+  input[type=text], input[type=password], input[type=email], input[type=url], input[type=number], input[type=tel], textarea, select, .vTextField {
+    border-radius: 8px; border: 1px solid #D5E0DA; padding: 7px 10px; }
+  input:focus, textarea:focus, select:focus { border-color: #3E8E6C; outline: 2px solid #E7F0EC; }
+  .form-row { padding: 12px 16px; }
+  #changelist-filter { border-radius: 12px; border: 1px solid #E1EAE5; }
+  #changelist-filter h2 { background: #0F382B; color: #fff; }
+  .back-console { background: #C9A227; color: #0F382B !important; padding: 5px 10px; border-radius: 999px; font-weight: 700; margin-right: 6px; text-decoration: none !important; }
+</style>
+{% endblock %}
+{% block branding %}
+<div id="site-name"><h1><a href="{% url 'admin:index' %}"><span class="mark">R</span>Rihla data admin</a></h1></div>
+{% endblock %}
+{% block userlinks %}<a class="back-console" href="/console/">← Back to console</a> {{ block.super }}{% endblock %}
+{% block nav-global %}{% endblock %}

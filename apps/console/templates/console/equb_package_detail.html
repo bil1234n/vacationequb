@@ -1,0 +1,49 @@
+{% extends "console/base.html" %}{% load console_tags %}
+{% block title %}{{ p.name }}{% endblock %}{% block heading %}{{ p.name }}{% endblock %}
+{% block crumbs %}<a href="{% url 'console:equb_packages' %}">Equb packages</a>{% endblock %}
+{% block actions %}<a class="btn ghost" href="{% url 'console:equb_package_edit' p.slug %}">Edit package</a>
+  {% if p.is_active %}<a class="btn" href="{% url 'console:equb_add' %}?package={{ p.pk }}">+ New group from this package</a>{% endif %}{% endblock %}
+{% block content %}
+<div class="hero">
+  <div><div class="muted small">Equb package{% if not p.is_active %} · <b>inactive</b>{% endif %}</div>
+    <h2>{{ stats.groups }} group{{ stats.groups|pluralize }}</h2>
+    <div class="muted">Each group sets its own amount, frequency, members and rounds.</div></div>
+  <div class="stats"><div><b>{{ stats.groups }}</b><span>Groups</span></div><div><b>{{ stats.open }}</b><span>Open now</span></div>
+    <div><b>{{ stats.members }}</b><span>Members</span></div><div><b>{{ stats.collected|compact }}</b><span>Collected (ETB)</span></div></div>
+</div>
+
+<div class="card mt">
+  <div class="card-h"><h2>Groups in this package</h2><a href="{% url 'console:equbs' %}?package={{ p.slug }}">Open in Equb groups →</a></div>
+  <div class="table-wrap"><table class="t">
+  <thead><tr><th>Group</th><th class="r">Contribution</th><th style="width:170px">Members</th><th>Dates</th><th>Round</th><th class="r">Collected</th><th>Status</th><th></th></tr></thead>
+  <tbody>{% for g in groups %}<tr>
+    <td><a class="strong" href="{% url 'console:equb' g.slug %}">{{ g.name }}</a><div class="small muted">code <span class="mono">{{ g.join_code }}</span></div></td>
+    <td class="r num">{{ g.contribution_amount|money }}<div class="small muted">{{ g.get_frequency_display|lower }}{% if g.duration_label %} · {{ g.duration_label }}{% endif %}</div></td>
+    <td><div style="display:flex;gap:8px;align-items:center"><div class="bar" style="flex:1"><i style="width:{{ g.fill }}%"></i></div><span class="small num">{{ g.members }}/{{ g.max_members }}</span></div></td>
+    <td class="small nowrap">{{ g.start_date|date:"d M Y" }}<div class="muted">→ {{ g.end_date|date:"d M Y"|default:"—" }}</div></td>
+    <td class="num">{% if g.current_round %}{{ g.current_round }}/{{ g.total_rounds }}{% else %}—{% endif %}</td>
+    <td class="r num">{{ g.collected|money }}</td><td>{{ g.status|status_badge }}</td>
+    <td class="r">{% if g.status == 'OPEN' %}<a class="btn ghost xs" href="{% url 'console:equb_membership_add' %}?group={{ g.slug }}">+ Member</a>{% endif %}</td></tr>
+  {% empty %}<tr><td colspan="8" class="empty">No groups yet. {% if p.is_active %}<a href="{% url 'console:equb_add' %}?package={{ p.pk }}">Create the first group →</a>{% endif %}</td></tr>{% endfor %}</tbody>
+  </table></div>
+</div>
+
+<div class="grid g-21 mt">
+  <div class="card">
+    <div class="card-h"><h2>Latest members</h2><a href="{% url 'console:equb_memberships' %}?package={{ p.slug }}">All memberships →</a></div>
+    <div class="table-wrap"><table class="t"><thead><tr><th>Member</th><th>Group</th><th>Place</th><th>Status</th><th>Joined</th></tr></thead><tbody>
+    {% for m in members %}<tr><td><a class="strong" href="{% url 'console:equb_member' m.pk %}">{{ m.user.full_name }}</a><div class="small">{{ m.user.phone|tel }}</div></td>
+      <td class="small">{{ m.group.name }}</td><td class="num">#{{ m.position }}</td><td>{{ m.status|status_badge }}</td><td class="small muted">{{ m.created_at|date:"d M Y" }}</td></tr>
+    {% empty %}<tr><td colspan="5" class="empty">Nobody has joined yet.</td></tr>{% endfor %}</tbody></table></div>
+  </div>
+  <div class="card">
+    <div class="card-h"><h2>Package</h2><a href="{% url 'console:equb_package_edit' p.slug %}">Edit →</a></div>
+    <dl class="kv">
+      <dt>Status</dt><dd>{% if p.is_active %}Active{% else %}Inactive{% endif %}</dd>
+    </dl>
+    <p class="small muted">Fees, late fees and draw rules are the same for every Equb – <a href="{% url 'console:equb_rules' %}">Equb rules</a>.</p>
+    {% if terms %}<hr style="border:0;border-top:1px solid var(--line);margin:16px 0"><div class="small strong" style="margin-bottom:6px">Terms and conditions</div>
+    <ol class="rules-list small">{% for t in terms %}<li>{{ t }}</li>{% endfor %}</ol>{% endif %}
+  </div>
+</div>
+{% endblock %}

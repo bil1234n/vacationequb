@@ -1,0 +1,123 @@
+{% extends "console/base.html" %}{% load console_tags %}
+{% block title %}{{ g.name }} · Round {{ r.number }}{% endblock %}{% block heading %}Round {{ r.number }} of {{ g.total_rounds }}{% endblock %}
+{% block crumbs %}<a href="{% url 'console:equb_draws' %}">Equb draws</a> / <a href="{% url 'console:equb' g.slug %}">{{ g.name }}</a> / Round {{ r.number }}{% endblock %}
+{% block actions %}
+  {% if not drawn %}<button class="btn ghost" data-open="postpone-dialog">Move draw date</button>{% endif %}
+  {% if can_draw %}<button class="btn gold" data-open="draw-dialog" {% if not selectable %}disabled title="Nobody is waiting to win"{% endif %}>✦ Draw winner{{ to_pick|pluralize }}</button>{% endif %}
+{% endblock %}
+{% block content %}
+<div class="hero">
+  <div><div class="muted small">{{ g.name }} · {{ r.get_status_display }} · {% if g.draw_type == 'MANUAL' %}Manual draw{% else %}Automatic draw on the draw date{% endif %}</div><h2>{% if drawn %}Drawn {{ r.draw.executed_at|date:"d M Y, H:i" }}{% else %}Draw on {{ r.draw_date|date:"l d M Y" }}{% endif %}</h2>
+    <div class="muted">Contributions due {{ r.due_date|date:"d M Y" }} · grace until {{ r.due_date|date:"d M" }} + {{ g.grace_days }} days{% if r.draw_note %} · {{ r.draw_note }}{% endif %}</div></div>
+  <div class="stats"><div><b>{{ paid }}/{{ contributions|length }}</b><span>Paid</span></div><div><b>{{ r.collected_amount|compact }}</b><span>Collected (ETB)</span></div><div><b>{{ r.expected_amount|compact }}</b><span>Expected (ETB)</span></div>
+    <div><b>{{ in_draw|default:"—" }}</b><span>In the draw</span></div></div>
+</div>
+
+{% if drawn %}
+<div class="grid g-21 mt">
+  <div class="card">
+    <div class="card-h"><h2>Winners</h2><span>{{ snapshot.odds_percent|default:"—" }}% chance each</span></div>
+    {% for p in payouts %}<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--line)">
+      <div><a class="strong" href="{% url 'console:equb_member' p.membership_id %}">🏆 {{ p.membership.user.full_name }}</a><div class="small muted">Place #{{ p.membership.position }} · voucher <span class="mono">{{ p.voucher_code }}</span></div></div>
+      <div style="text-align:right"><div class="strong num">{{ p.amount|money }}</div><div class="small muted">gross {{ p.gross_amount|money }} − fee {{ p.fee_amount|money }}</div>{{ p.status|status_badge }}</div></div>
+    {% endfor %}
+    <div class="card-h mt-l"><h2>In the draw ({{ snapshot.eligible|length }})</h2><span>Canonical order (join position)</span></div>
+    <div class="table-wrap"><table class="t"><thead><tr><th>Index</th><th>#</th><th>Member</th></tr></thead><tbody>
+      {% for e in snapshot.eligible %}<tr><td class="mono">{{ forloop.counter0 }}</td><td class="muted">{{ e.position }}</td><td><a href="{% url 'console:equb_member' e.membership_id %}">{{ e.name }}</a></td></tr>
+      {% empty %}<tr><td colspan="3" class="empty">This draw ran before eligibility snapshots were recorded.</td></tr>{% endfor %}</tbody></table></div>
+    {% if snapshot.excluded %}<div class="card-h mt-l"><h2>Left out ({{ snapshot.excluded|length }})</h2><span>Still waiting to win, not eligible this round</span></div>
+    <div class="table-wrap"><table class="t"><thead><tr><th>#</th><th>Member</th><th>Why</th></tr></thead><tbody>
+      {% for e in snapshot.excluded %}<tr><td class="muted">{{ e.position }}</td><td><a href="{% url 'console:equb_member' e.membership_id %}">{{ e.name }}</a></td><td class="small">{{ e.reasons|join:" · " }}</td></tr>{% endfor %}</tbody></table></div>{% endif %}
+  </div>
+  {% if r.draw.is_selected %}
+  <div class="card">
+    <div class="card-h"><h2>Winner chosen by staff</h2><span class="badge b-gold">Selected</span></div>
+    <p class="small muted" style="margin-top:0">This round was not drawn at random: the winner was picked on the round page.</p>
+    <dl class="kv"><dt>Chosen by</dt><dd>{{ r.draw.executed_by.full_name|default:"Staff" }}</dd><dt>When</dt><dd>{{ r.draw.executed_at|date:"d M Y, H:i" }}</dd>
+      <dt>Could choose from</dt><dd>{{ in_draw }} member{{ in_draw|pluralize }}</dd>{% if r.draw.note %}<dt>Reason</dt><dd>{{ r.draw.note }}</dd>{% endif %}</dl>
+  </div>
+  {% else %}
+  <div class="card">
+    <div class="card-h"><h2>Fairness proof</h2>{% if verification.matches %}<span class="badge b-green">✓ Verified</span>{% else %}<span class="badge b-red">✗ Mismatch</span>{% endif %}</div>
+    <p class="small muted" style="margin-top:0">The commitment was published before the draw. Anyone can hash the revealed seed, compare it with the commitment and recompute the winner from the public input.</p>
+    <div class="small strong">Commitment (published before)</div><div class="hash">{{ verification.seed_commitment }}</div>
+    <div class="small strong" style="margin-top:10px">Revealed seed</div><div class="hash">{{ verification.server_seed }}</div>
+    <div class="small strong" style="margin-top:10px">Public input</div><div class="hash">{{ verification.public_input }}</div>
+    <dl class="kv" style="margin-top:12px"><dt>Algorithm</dt><dd class="small">{{ verification.algorithm }}</dd><dt>Winner index</dt><dd class="mono">{{ verification.winner_indices|join:", " }}</dd>
+      <dt>Recomputed</dt><dd class="mono">{{ verification.recomputed_indices|join:", " }}</dd><dt>Run by</dt><dd>{{ r.draw.executed_by.full_name|default:"Scheduler (automatic)" }}</dd></dl>
+  </div>
+  {% endif %}
+</div>
+{% elif pool %}
+<div class="grid g-21 mt">
+  <div class="card">
+    <div class="card-h"><h2>Draw eligibility</h2><span>{{ pool.eligible_count }} in · {{ pool.excluded_count }} left out · {{ pool.odds_percent }}% chance each</span></div>
+    {% if not pool.eligible_count %}<div class="note-box red" style="margin-bottom:12px">Nobody can win yet. At least one member who hasn't won must be fully paid for this round.</div>{% endif %}
+    <div class="table-wrap"><table class="t"><thead><tr><th>#</th><th>Member</th><th>Standing</th><th>Draw</th><th class="r">Chance</th></tr></thead><tbody>
+      {% for e in pool.entries %}<tr class="{% if not e.eligible %}muted{% endif %}">
+        <td class="muted">{{ e.position }}</td><td><a class="strong" href="{% url 'console:equb_member' e.membership_id %}">{{ e.name }}</a><div class="small">{{ e.phone|tel }}</div></td>
+        <td>{{ e.standing|standing_badge }}</td>
+        <td>{% if e.eligible %}<span class="badge b-green">In the draw</span>{% else %}<span class="badge b-grey">Left out</span><ul class="reasons">{% for why in e.reasons %}<li>{{ why }}</li>{% endfor %}</ul>{% endif %}</td>
+        <td class="r num">{% if e.eligible %}{{ e.odds }}%{% else %}—{% endif %}</td></tr>
+      {% endfor %}</tbody></table></div>
+  </div>
+  <div class="card">
+    <div class="card-h"><h2>Commitment</h2><span>Published before the draw</span></div>
+    <div class="hash">{{ r.draw.seed_commitment }}</div>
+    <p class="small muted">This fingerprint of the secret seed is visible to members now, so the result can't be changed after the fact.</p>
+    <div class="card-h mt-l"><h2>Collection</h2><span>{{ progress }}%</span></div>
+    <div class="bar"><i style="width:{{ progress }}%"></i></div>
+    <p class="small muted">Members who pay before the draw are added automatically. Payments recorded at the office count immediately.</p>
+  </div>
+</div>
+{% endif %}
+
+<div class="card mt">
+  <div class="card-h"><h2>Round {{ r.number }} contributions</h2><span>{{ paid }} of {{ contributions|length }} paid</span></div>
+  <div class="table-wrap"><table class="t"><thead><tr><th>#</th><th>Member</th><th>Status</th><th>Paid</th><th>Receipt</th><th class="r">Late fee</th><th class="r">Amount</th><th></th></tr></thead><tbody>
+  {% for c in contributions %}<tr>
+    <td class="muted">{{ c.membership.position }}</td><td><a href="{% url 'console:equb_member' c.membership_id %}">{{ c.membership.user.full_name }}</a></td>
+    <td>{% if c.overdue %}<span class="badge b-red">Overdue</span>{% else %}{{ c.status|status_badge }}{% endif %}{% if c.note %}<div class="small muted">{{ c.note }}</div>{% endif %}</td>
+    <td class="small">{{ c.paid_at|date:"d M, H:i"|default:"—" }}</td><td class="mono small">{{ c.payment_record.reference|default:"—" }}</td>
+    <td class="r num">{% if c.fee %}{{ c.fee|money }}{% else %}—{% endif %}</td><td class="r num">{{ c.amount|money }}</td>
+    <td class="r">{% if not c.is_settled %}<a class="btn ghost xs" href="{% url 'console:equb_member' c.membership_id %}#pay">Record payment</a>{% endif %}</td></tr>
+  {% empty %}<tr><td colspan="8" class="empty">No contributions for this round yet.</td></tr>{% endfor %}</tbody></table></div>
+</div>
+
+{% if can_draw %}
+<dialog class="modal wide" id="draw-dialog"><form method="post" data-draw-form>{% csrf_token %}<input type="hidden" name="action" value="draw">
+  <div class="modal-h"><h3>Round {{ r.number }} draw · {{ to_pick }} winner{{ to_pick|pluralize }}</h3><button type="button" class="x" data-close>&times;</button></div>
+  <div class="modal-b">
+    <div class="draw-methods">
+      <label class="draw-method"><input type="radio" name="method" value="random" {% if pool.eligible_count %}checked{% else %}disabled{% endif %}>
+        <span><b>Random draw</b><span class="small muted">Provably fair: the result comes from the seed committed before the draw. {{ pool.eligible_count }} member{{ pool.eligible_count|pluralize }} in the draw, {{ pool.odds_percent }}% chance each.</span></span></label>
+      <label class="draw-method"><input type="radio" name="method" value="select" {% if not pool.eligible_count %}checked{% endif %}>
+        <span><b>Select the winner{{ to_pick|pluralize }}</b><span class="small muted">You choose who wins this round – e.g. the member who needs to travel first. Members are told the winner as usual.</span></span></label>
+    </div>
+    <div data-select-panel hidden>
+      <div class="small strong" style="margin:14px 0 6px">Tick {{ to_pick }} member{{ to_pick|pluralize }}</div>
+      <div class="pick-list">
+        {% for e in selectable %}<label class="pick {% if not e.eligible %}inel{% endif %}"><input type="checkbox" name="winner" value="{{ e.membership_id }}" {% if not e.eligible %}disabled{% endif %}>
+          <span class="muted">#{{ e.position }}</span><span class="grow"><b>{{ e.name }}</b> <span class="small muted">{{ e.phone|tel }}</span>{% if not e.eligible %}<span class="small" style="display:block;color:var(--red)">{{ e.reasons|join:" · " }}</span>{% endif %}</span>
+          {% if e.eligible %}<span class="badge b-green">In the draw</span>{% else %}<span class="badge b-grey">Left out</span>{% endif %}</label>{% endfor %}
+      </div>
+      {% if pool.excluded_count %}<label class="check-row" style="margin-top:10px"><input type="checkbox" name="include_ineligible" value="1" data-include-inel> Also allow members who are left out of this draw</label>{% endif %}
+      <div class="field" style="margin-top:10px"><label>Reason <span class="small muted">(required when choosing someone left out)</span></label><input type="text" name="note" maxlength="250" placeholder="e.g. Travels first for medical reasons, agreed by the group"></div>
+    </div>
+  </div>
+  <div class="modal-f"><button type="button" class="btn ghost" data-close>Cancel</button><button class="btn gold" data-confirm-draw>Confirm draw</button></div>
+</form></dialog>
+{% endif %}
+
+{% if not drawn %}
+<dialog class="modal" id="postpone-dialog"><form method="post">{% csrf_token %}<input type="hidden" name="action" value="postpone">
+  <div class="modal-h"><h3>Move the round {{ r.number }} draw</h3><button type="button" class="x" data-close>&times;</button></div>
+  <div class="modal-b">
+    <div class="field"><label>New draw date</label><input type="date" name="draw_date" min="{{ today|date:'Y-m-d' }}" value="{{ r.draw_date|date:'Y-m-d' }}" required></div>
+    <div class="field"><label>Reason (shown to members)</label><input type="text" name="reason" placeholder="e.g. Public holiday" maxlength="200"></div>
+    <label class="check-row"><input type="checkbox" name="notify" value="1" checked> Notify members</label>
+  </div>
+  <div class="modal-f"><button type="button" class="btn ghost" data-close>Cancel</button><button class="btn">Save date</button></div>
+</form></dialog>
+{% endif %}
+{% endblock %}

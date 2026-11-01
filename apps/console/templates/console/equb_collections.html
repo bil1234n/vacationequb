@@ -1,0 +1,67 @@
+{% extends "console/base.html" %}{% load console_tags %}
+{% block title %}Collections{% endblock %}{% block heading %}Collections &amp; arrears{% endblock %}{% block crumbs %}Equb · position today{% endblock %}
+{% block actions %}<a class="btn ghost" href="{% qs export='csv' page=None %}">Export CSV</a><a class="btn" href="{% url 'console:call_center' %}">Open call centre</a>{% endblock %}
+{% block content %}
+<div class="grid g-4">
+  <div class="card kpi dark"><div class="label">Collection rate</div><div class="value">{{ summary.collection_rate }}%</div><div class="sub">{{ summary.paid_due|money }} of {{ summary.expected|money }} due so far</div></div>
+  <div class="card kpi {% if summary.arrears %}gold{% endif %}"><div class="label">Arrears</div><div class="value">{{ summary.arrears|compact }} <small style="font-size:14px">ETB</small></div><div class="sub">{{ summary.members_in_arrears }} of {{ summary.memberships }} places behind</div></div>
+  <div class="card kpi"><div class="label">Never paid</div><div class="value">{{ summary.never_paid_count }}</div><div class="sub">{{ summary.never_paid_amount|money }} owed · <a href="?never=1">show →</a></div></div>
+  <div class="card kpi"><div class="label">Winners who owe</div><div class="value" style="{% if summary.critical_count %}color:var(--red){% endif %}">{{ summary.critical_count }}</div><div class="sub">{{ summary.critical_amount|money }} – collect first</div></div>
+</div>
+
+<div class="strip mt">
+  <div><div class="label">Due now (not yet late)</div><div class="value gold">{{ summary.due_now|money }}</div><div class="sub">current rounds</div></div>
+  <div><div class="label">Paid ahead</div><div class="value green">{{ summary.credit|money }}</div><div class="sub">member credit held</div></div>
+  <div><div class="label">Paid early</div><div class="value">{{ summary.paid_early|money }}</div><div class="sub">before rounds fell due</div></div>
+  <div><div class="label">Payouts not yet used</div><div class="value">{{ liability.issued_amount|money }}</div><div class="sub">{{ liability.issued_count }} voucher{{ liability.issued_count|pluralize }}</div></div>
+  <div><div class="label">Terminated debt</div><div class="value red">{{ terminated.amount|money }}</div><div class="sub">{{ terminated.count }} place{{ terminated.count|pluralize }} · <a href="{% url 'console:terminations' %}?tab=terminated">see</a></div></div>
+</div>
+
+<div class="card-h mt-l"><h2>Arrears by age</h2><span>Days since the oldest unpaid round fell due · click to filter</span></div>
+<div class="bands">
+  {% for b in ageing %}<a class="band {% if b.tone == 'red' %}red{% endif %} {% if band == b.key %}on{% endif %}" href="{% if band == b.key %}?{% else %}?band={{ b.key }}{% endif %}">
+    <span class="small muted">{{ b.label }}</span><b>{{ b.amount|money }}</b><span class="small">{{ b.count }} place{{ b.count|pluralize }} · {{ b.share }}%</span>
+    <div class="bar"><i style="width:{{ b.share }}%"></i></div></a>{% endfor %}
+</div>
+
+<div class="grid g-21 mt">
+  <div class="card"><div class="card-h"><h2>Arrears by age</h2></div><div class="chart-box sm"><canvas data-chart="ageing"></canvas></div></div>
+  <div class="card"><div class="card-h"><h2>Member standing</h2></div><div class="chart-box sm"><canvas data-chart="standing"></canvas></div></div>
+</div>
+
+<div class="card mt">
+  <div class="card-h"><h2>By pool</h2></div>
+  <div class="table-wrap"><table class="t"><thead><tr><th>Pool</th><th class="r">Due so far</th><th class="r">Paid</th><th style="width:150px">Collection rate</th><th class="r">Arrears</th><th>Behind</th><th class="r">Credit</th></tr></thead><tbody>
+  {% for p in pools %}<tr><td><a class="strong" href="{% url 'console:equb' p.group.slug %}?tab=members&standing=behind">{{ p.group.name }}</a></td><td class="r num">{{ p.expected|money }}</td><td class="r num">{{ p.paid|money }}</td>
+    <td>{% if p.collection_rate is None %}<span class="small muted">Nothing due yet</span>{% else %}<div class="bar {% if p.collection_rate < 80 %}gold{% endif %}"><i style="width:{{ p.collection_rate }}%"></i></div><span class="small num">{{ p.collection_rate }}%</span>{% endif %}</td>
+    <td class="r num {% if p.arrears %}strong{% endif %}" style="{% if p.arrears %}color:var(--red){% endif %}">{{ p.arrears|money }}</td><td class="num">{{ p.debtors }}/{{ p.memberships }}</td><td class="r num">{{ p.credit|money }}</td></tr>
+  {% empty %}<tr><td colspan="7" class="empty">No running pools.</td></tr>{% endfor %}</tbody></table></div>
+</div>
+
+<div class="card mt">
+  <div class="card-h"><h2>Members in arrears</h2><span>Worst first · winners who owe are highlighted</span></div>
+  <form class="toolbar" method="get">
+    <input class="grow" type="search" name="q" value="{{ q }}" placeholder="Search name, phone or pool…">
+    <select name="pool"><option value="">All pools</option>{% for p in pool_choices %}<option value="{{ p.id }}" {% if pool == p.id|stringformat:"s" %}selected{% endif %}>{{ p.name }}</option>{% endfor %}</select>
+    <select name="band"><option value="">Any age</option>{% for b in ageing %}<option value="{{ b.key }}" {% if band == b.key %}selected{% endif %}>{{ b.label }}</option>{% endfor %}</select>
+    <label class="check-row" style="margin:0"><input type="checkbox" name="never" value="1" {% if never %}checked{% endif %}> Never paid</label>
+    <button class="btn" type="submit">Filter</button>{% if q or pool or band or never %}<a class="btn ghost" href="?">Reset</a>{% endif %}
+  </form>
+  <div class="table-wrap"><table class="t"><thead><tr><th>Member</th><th>Pool</th><th>Standing</th><th>Overdue</th><th>Unpaid</th><th class="r">Owes</th><th>Last called</th><th></th></tr></thead><tbody>
+  {% for r in page %}<tr class="{% if r.s.critical %}critical{% endif %}">
+    <td><a class="strong" href="{% url 'console:equb_member' r.m.pk %}">{{ r.m.user.full_name }}</a><div class="small">{{ r.m.user.phone|tel }}</div></td>
+    <td class="small">{{ r.m.group.name }}<div class="muted">#{{ r.m.position }}{% if r.s.has_won %} · 🏆 won R{{ r.s.won_round }}{% endif %}</div></td>
+    <td>{{ r.s.status|standing_badge }}</td><td>{{ r.s.days_overdue|days_badge }}</td>
+    <td class="num">{{ r.s.missed_rounds }} round{{ r.s.missed_rounds|pluralize }}</td><td class="r num strong">{{ r.s.arrears|money }}</td>
+    <td class="small">{% if r.m.called_at %}{{ r.m.called_at|date:"d M" }}{% else %}<span class="muted">—</span>{% endif %}</td>
+    <td class="r"><a class="btn ghost sm" href="{% url 'console:equb_member' r.m.pk %}">Open</a></td></tr>
+  {% empty %}<tr><td colspan="8" class="empty">Nobody is behind{% if q or pool or band or never %} for this filter{% endif %}. 🎉</td></tr>{% endfor %}</tbody></table></div>
+  {% include "console/_pagination.html" %}
+</div>
+
+{% if refund.count %}<div class="card mt">
+  <div class="card-h"><h2>Credit to refund</h2><span>{{ refund.amount|money }} left on finished or closed places</span></div>
+  <div class="table-wrap"><table class="t"><thead><tr><th>Member</th><th>Pool</th><th>Place</th><th class="r">Credit</th><th></th></tr></thead><tbody>
+  {% for m in refund.rows %}<tr><td>{{ m.user.full_name }}<div class="small">{{ m.user.phone|tel }}</div></td><td>{{ m.group.name }}</td><td>{{ m.status|status_badge }}</td><td class="r num strong">{{ m.prepaid_credit|money }}</td><td class="r"><a class="btn ghost sm" href="{% url 'console:equb_member' m.pk %}">Open</a></td></tr>{% endfor %}
+  </tbody></table></div></div>{% endif %}
+{% endblock %}

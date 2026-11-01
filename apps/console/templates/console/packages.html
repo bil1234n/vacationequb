@@ -1,0 +1,21 @@
+{% extends "console/base.html" %}{% load console_tags %}
+{% block title %}Packages{% endblock %}{% block heading %}Hajj, Umrah &amp; tour packages{% endblock %}{% block crumbs %}Travel{% endblock %}
+{% block actions %}<a class="btn" href="{% url 'console:package_add' %}">+ New package</a>{% endblock %}
+{% block content %}
+<div class="grid g-21">
+  <div class="card"><div class="card-h"><h2>Occupancy</h2><span>Places sold vs left</span></div><div class="chart-box"><canvas data-chart="occupancy"></canvas></div></div>
+  <div class="card"><div class="card-h"><h2>Revenue by category</h2></div><div class="chart-box"><canvas data-chart="revenue"></canvas></div></div>
+</div>
+<div class="card mt"><div class="table-wrap"><table class="t">
+  <thead><tr><th>Package</th><th>Category</th><th>Dates</th><th class="r">Price</th><th>Confirmed</th><th style="width:200px">Occupancy</th><th class="r">Revenue</th><th></th></tr></thead>
+  <tbody>{% for p in pkgs %}<tr>
+    <td class="strong">{{ p.name }}<div class="small muted">{{ p.destination_city }}, {{ p.destination_country }} · {{ p.duration_days }} days</div></td>
+    <td><span class="badge b-gold">{{ p.get_category_display }}</span></td>
+    <td class="small">{{ p.departure_date|date:"d M Y" }} – {{ p.return_date|date:"d M" }}</td>
+    <td class="r num">{{ p.price|money }}</td><td class="num">{{ p.confirmed }}</td>
+    <td><div style="display:flex;gap:8px;align-items:center"><div class="bar" style="flex:1"><i style="width:{{ p.load }}%"></i></div><span class="small num">{{ p.seats_sold }}/{{ p.capacity }}</span></div></td>
+    <td class="r num strong">{{ p.revenue|default:0|money }}</td>
+    <td><a class="btn ghost sm" href="{% url 'console:package_edit' p.pk %}">Edit</a></td></tr>
+  {% empty %}<tr><td colspan="8" class="empty">No packages yet. <a href="{% url 'console:package_add' %}">Create your first package →</a></td></tr>{% endfor %}</tbody>
+</table></div></div>
+{% endblock %}

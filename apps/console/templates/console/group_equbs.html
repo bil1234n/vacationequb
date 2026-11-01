@@ -1,0 +1,36 @@
+{% extends "console/base.html" %}{% load console_tags %}
+{% block title %}Group Equbs{% endblock %}{% block heading %}Group Equbs{% endblock %}{% block crumbs %}Equb{% endblock %}
+{% block actions %}<a class="btn" href="{% url 'console:group_equb_add' %}">+ New Group Equb</a>{% endblock %}
+{% block content %}
+<p class="muted" style="margin:-6px 0 18px">A family, friends, a company team or a community saving in one Equb together. Members join with the group's invite code; responsibility people are relatives without the app – the owner pays for them.</p>
+<div class="grid g-4">
+  <div class="card kpi dark"><div class="label">Group Equbs</div><div class="value">{{ kpi.groups }}</div><div class="sub">{{ kpi.members }} place{{ kpi.members|pluralize }} in Equbs</div></div>
+  <div class="card kpi"><div class="label">Waiting to start</div><div class="value">{{ kpi.waiting }}</div><div class="sub">their Equb is still open</div></div>
+  <div class="card kpi"><div class="label">Running</div><div class="value">{{ kpi.running }}</div><div class="sub">collecting &amp; drawing</div></div>
+  <div class="card kpi"><div class="label">Collected</div><div class="value">{{ kpi.collected|compact }} <small style="font-size:14px">ETB</small></div><div class="sub">paid by group members</div></div>
+</div>
+
+<div class="card mt">
+  <div class="card-h"><h2>All Group Equbs</h2>
+    <div class="chips"><a class="chip {% if not kind %}on{% endif %}" href="{% qs kind=None page=None %}">All</a>
+      {% for k, l, n in kinds %}<a class="chip {% if kind == k %}on{% endif %}" href="{% qs kind=k page=None %}">{{ l }} · {{ n }}</a>{% endfor %}</div></div>
+  <form class="toolbar" method="get">{% if kind %}<input type="hidden" name="kind" value="{{ kind }}">{% endif %}
+    <input class="grow" type="search" name="q" value="{{ q }}" placeholder="Search group, invite code, Equb, owner name or phone…">
+    <select name="state"><option value="">All</option><option value="waiting" {% if state == 'waiting' %}selected{% endif %}>Waiting to start</option><option value="running" {% if state == 'running' %}selected{% endif %}>Running</option><option value="closed" {% if state == 'closed' %}selected{% endif %}>Closed / finished</option></select>
+    <button class="btn" type="submit">Filter</button>{% if q or state or kind %}<a class="btn ghost" href="?">Reset</a>{% endif %}
+  </form>
+  <div class="table-wrap"><table class="t">
+    <thead><tr><th>Group</th><th>Type</th><th>Owner</th><th>Equb</th><th class="r">Places</th><th class="r">Paid</th><th>Status</th></tr></thead>
+    <tbody>{% for t in page %}<tr>
+      <td><a class="strong" href="{% url 'console:group_equb' t.pk %}">{{ t.name }}</a><div class="small muted">code <span class="mono">{{ t.invite_code }}</span> · {{ t.created_at|date:"d M Y" }}</div></td>
+      <td><span class="badge b-gold">{{ t.get_kind_display }}</span></td>
+      <td><a href="{% url 'console:user' t.owner_id %}">{{ t.owner.full_name }}</a><div class="small">{{ t.owner.phone|tel }}</div></td>
+      <td><a href="{% url 'console:equb' t.equb.slug %}">{{ t.equb.name }}</a><div class="small muted">{{ t.equb.contribution_amount|money }} {{ t.equb.every }}</div></td>
+      <td class="r num">{{ t.members|add:t.dependents }}<div class="small muted">{{ t.members }} member{{ t.members|pluralize }}{% if t.dependents %} + {{ t.dependents }} dependent{{ t.dependents|pluralize }}{% endif %}</div></td>
+      <td class="r num">{{ t.collected|money }}</td>
+      <td>{% if not t.is_active %}<span class="badge b-grey">Closed</span>{% else %}{{ t.equb.status|status_badge }}{% endif %}</td></tr>
+    {% empty %}<tr><td colspan="7" class="empty">{% if q or state or kind %}No Group Equbs match these filters.{% else %}No Group Equbs yet. <a href="{% url 'console:group_equb_add' %}">Create the first one →</a>{% endif %}</td></tr>{% endfor %}</tbody>
+  </table></div>
+  {% include "console/_pagination.html" %}
+</div>
+{% endblock %}

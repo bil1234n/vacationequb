@@ -1,0 +1,138 @@
+{% extends "console/base.html" %}{% load console_tags %}
+{% block title %}{{ g.name }}{% endblock %}{% block heading %}{{ g.name }}{% endblock %}
+{% block crumbs %}{% if g.equb_package %}<a href="{% url 'console:equb_packages' %}">Equb packages</a> / <a href="{% url 'console:equb_package' g.equb_package.slug %}">{{ g.equb_package.name }}</a>{% else %}<a href="{% url 'console:equbs' %}">Equb groups</a>{% endif %}{% endblock %}
+{% block actions %}
+  {% if g.status == 'OPEN' %}<form method="post" data-confirm="Start this Equb now with {{ g.members_count }} members? Rounds will be scheduled and members notified.">{% csrf_token %}<input type="hidden" name="action" value="start"><button class="btn gold">Start Equb</button></form>{% endif %}
+  {% if current %}<a class="btn gold" href="{% url 'console:equb_round' g.slug current.number %}">Round {{ current.number }} draw →</a>
+  <form method="post">{% csrf_token %}<input type="hidden" name="action" value="sweep"><button class="btn ghost" title="Mark overdue contributions late, add late fees and notify members">Flag late payers</button></form>{% endif %}
+  <a class="btn ghost" href="{% url 'console:equb_edit' g.slug %}">Edit</a>
+{% endblock %}
+{% block content %}
+<div class="hero">
+  <div><div class="muted small">{{ g.get_frequency_display }}{% if g.duration_label %} for {{ g.duration_label }}{% endif %} · {% if g.draw_type == 'MANUAL' %}Manual draw{% else %}Automatic draw{% endif %}</div><h2>{{ g.contribution_amount|money }} per member {{ g.frequency_days|every }}</h2>
+    <div class="muted small">{{ g.start_date|date:"d M Y" }} → {{ g.end_date|date:"d M Y"|default:"—" }} · {{ g.max_members }} members{% if g.teams.exists %} · {{ g.teams.count }} Group Equb{{ g.teams.count|pluralize }}{% endif %}</div>
+    <div class="muted">Winners receive travel credit · {{ g.service_fee_percent.normalize }}% service fee · {% if g.late_fee %}late fee {{ g.late_fee|money }} after {{ g.grace_days }} days{% else %}{{ g.grace_days }} days' grace, no late fee{% endif %}</div>
+    <div style="margin-top:10px">Join code <span class="code-pill">{{ g.join_code }}</span></div></div>
+  <div class="stats"><div><b>{{ g.members_count }}/{{ g.max_members }}</b><span>Members ({{ fill }}%)</span></div><div><b>{{ g.pot_per_round|compact }}</b><span>Pot / round (ETB)</span></div><div><b>{{ totals.total_collected|compact }}</b><span>Collected (ETB)</span></div><div><b>{{ totals.rounds_drawn }}/{{ g.total_rounds }}</b><span>Rounds drawn</span></div></div>
+</div>
+
+<div class="strip mt">
+  <div><div class="label">Behind</div><div class="value {% if behind_count %}red{% endif %}">{{ behind_count }}</div><div class="sub">of {{ members_count }} members</div></div>
+  <div><div class="label">Arrears</div><div class="value {% if arrears %}red{% endif %}">{{ arrears|money }}</div><div class="sub">late fees included</div></div>
+  <div><div class="label">Credit held</div><div class="value green">{{ credit|money }}</div><div class="sub">paid ahead by members</div></div>
+  <div><div class="label">Payouts</div><div class="value">{{ totals.payouts_total|money }}</div><div class="sub">{{ totals.payouts_issued }} winner{{ totals.payouts_issued|pluralize }}</div></div>
+  <div><div class="label">Service fees</div><div class="value">{{ totals.service_fees|money }}</div><div class="sub">+ {{ totals.late_fees_collected|money }} late fees</div></div>
+</div>
+
+<div class="tabs mt-l">
+  <a href="?tab=overview" class="{% if tab == 'overview' %}on{% endif %}">Overview</a>
+  <a href="?tab=members" class="{% if tab == 'members' %}on{% endif %}">Members <span class="count {% if behind_count %}alert{% endif %}">{{ members_count }}</span></a>
+  <a href="?tab=payments" class="{% if tab == 'payments' %}on{% endif %}">Payments</a>
+  <a href="?tab=draws" class="{% if tab == 'draws' %}on{% endif %}">Rounds &amp; draws <span class="count">{{ rounds|length }}</span></a>
+</div>
+
+{% if tab == 'members' %}
+<div class="card">
+  <div class="card-h"><h2>Members &amp; standing</h2>
+    <div class="chips">
+      <a class="chip {% if not filt %}on{% endif %}" href="?tab=members">All</a>
+      <a class="chip {% if filt == 'behind' %}on{% endif %}" href="?tab=members&standing=behind">Behind</a>
+      <a class="chip {% if filt == 'waiting' %}on{% endif %}" href="?tab=members&standing=waiting">Still to win</a>
+      <a class="chip {% if filt == 'won' %}on{% endif %}" href="?tab=members&standing=won">Won</a>
+      <a class="chip {% if filt == 'ended' %}on{% endif %}" href="?tab=members&standing=ended">Terminated</a>
+    </div></div>
+  <div class="table-wrap"><table class="t">
+    <thead><tr><th>#</th><th>Member</th><th>Standing</th><th>Rounds paid</th><th class="r">Arrears</th><th class="r">Credit</th><th>Next due</th><th>Flags</th><th></th></tr></thead>
+    <tbody>{% for r in rows %}<tr class="{% if r.s.critical %}critical{% elif not r.m.is_live %}muted{% endif %}">
+      <td class="muted">{{ r.m.position }}</td>
+      <td><a class="strong" href="{% url 'console:equb_member' r.m.pk %}">{{ r.m.user.full_name }}</a><div class="small">{{ r.m.user.phone|tel }}</div></td>
+      <td>{{ r.s.status|standing_badge }}{% if r.m.has_won %} <span class="badge b-gold">Won R{{ r.s.won_round }}</span>{% endif %}{% if r.s.days_overdue %}<div class="small muted">{{ r.s.days_overdue }} days overdue</div>{% endif %}</td>
+      <td class="num">{{ r.s.paid_rounds }}/{{ r.s.rounds_opened }}{% if r.s.late_count %}<div class="small muted">{{ r.s.late_count }} late</div>{% endif %}</td>
+      <td class="r num {% if r.s.arrears %}strong{% endif %}" style="{% if r.s.arrears %}color:var(--red){% endif %}">{{ r.s.arrears|money }}</td>
+      <td class="r num">{% if r.s.credit %}{{ r.s.credit|money }}{% else %}<span class="muted">—</span>{% endif %}</td>
+      <td class="small">{% if r.s.next_due_date %}R{{ r.s.next_due_round }} · {{ r.s.next_due_date|date:"d M" }}<div class="muted">{% if r.s.next_due_covered %}covered by credit{% else %}{{ r.s.next_due_amount|money }}{% endif %}</div>{% else %}—{% endif %}</td>
+      <td class="small">{% if r.s.draw_blocked %}<span class="badge b-red" title="{{ r.s.draw_block_reason }}">Draw hold</span> {% endif %}{% if r.m.termination_requested_at %}<span class="badge b-red">To terminate</span> {% endif %}{% if r.m.exit_requested_at %}<span class="badge b-amber">Wants to leave</span> {% endif %}{% if r.m.called_at %}<span class="badge b-green">Called</span>{% endif %}</td>
+      <td class="r"><a class="btn ghost sm" href="{% url 'console:equb_member' r.m.pk %}">Open</a></td></tr>
+    {% empty %}<tr><td colspan="9" class="empty">No members here.</td></tr>{% endfor %}</tbody>
+  </table></div>
+</div>
+
+{% elif tab == 'payments' %}
+<div class="card">
+  <div class="card-h"><h2>Receipts</h2><span>App payments and payments taken at the office</span></div>
+  <div class="table-wrap"><table class="t">
+    <thead><tr><th>Date</th><th>Receipt</th><th>Member</th><th>Method</th><th>Rounds paid</th><th>Status</th><th>Recorded by</th><th class="r">Amount</th></tr></thead>
+    <tbody>{% for p in payments %}<tr>
+      <td class="small">{{ p.paid_at|default:p.created_at|date:"d M Y, H:i" }}</td><td class="mono strong">{{ p.reference }}</td>
+      <td><a href="{% url 'console:equb_member' p.membership_id %}">{{ p.membership.user.full_name }}</a></td>
+      <td>{% if p.is_office %}<span class="badge b-gold">{{ p.get_method_display }}</span>{% else %}{{ p.get_method_display }}{% endif %}{% if p.external_reference %}<div class="small muted mono">{{ p.external_reference }}</div>{% endif %}</td>
+      <td class="small">{% for x in p.allocation.rounds %}R{{ x.round }}{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}{% if p.allocation.credit_after and p.allocation.credit_after != "0" and p.allocation.credit_after != "0.00" %}<div class="muted">credit after: {{ p.allocation.credit_after|money }}</div>{% endif %}</td>
+      <td>{{ p.status|status_badge }}</td><td class="small">{{ p.recorded_by.full_name|default:"App" }}</td><td class="r num strong">{{ p.amount|money }}</td></tr>
+    {% empty %}<tr><td colspan="8" class="empty">No receipts yet.</td></tr>{% endfor %}</tbody>
+  </table></div>
+  {% include "console/_pagination.html" with page=payments %}
+</div>
+{% if legacy %}<div class="card mt"><div class="card-h"><h2>Single-round app payments</h2><span>Paid from older app versions</span></div>
+  <div class="table-wrap"><table class="t"><thead><tr><th>Date</th><th>Member</th><th>Round</th><th>Provider</th><th class="r">Amount</th></tr></thead><tbody>
+  {% for c in legacy %}<tr><td class="small">{{ c.paid_at|date:"d M Y, H:i" }}</td><td><a href="{% url 'console:equb_member' c.membership_id %}">{{ c.membership.user.full_name }}</a></td><td>R{{ c.round.number }}</td><td>{{ c.payment.get_provider_display }}</td><td class="r num">{{ c.amount_due|money }}</td></tr>{% endfor %}
+  </tbody></table></div></div>{% endif %}
+
+{% elif tab == 'draws' %}
+<div class="card">
+  <div class="table-wrap"><table class="t">
+    <thead><tr><th>Round</th><th>Due</th><th>Draw</th><th>Status</th><th style="width:160px">Collected</th><th>In the draw</th><th>Winner</th><th></th></tr></thead>
+    <tbody>{% for r in rounds %}<tr>
+      <td class="strong">R{{ r.number }}</td><td class="small">{{ r.due_date|date:"d M Y" }}</td>
+      <td class="small">{{ r.draw_date|date:"d M Y" }}{% if r.draw_note %}<div class="muted">{{ r.draw_note }}</div>{% endif %}</td>
+      <td>{{ r.status|status_badge }}</td>
+      <td><div class="bar"><i style="width:{{ r.progress }}%"></i></div><div class="small muted num">{{ r.paid }}/{{ r.slips }} paid · {{ r.collected_amount|compact }} / {{ r.expected_amount|compact }}</div></td>
+      <td class="num">{% if r.drawn %}{{ r.eligible }}{% else %}—{% endif %}</td>
+      <td class="small">{% for p in r.payouts.all %}🏆 {{ p.membership.user.full_name }}<div class="muted">{{ p.amount|money }}</div>{% empty %}—{% endfor %}</td>
+      <td class="r">{% if r.status != 'UPCOMING' %}<a class="btn ghost sm" href="{% url 'console:equb_round' g.slug r.number %}">{% if r.status == 'COLLECTING' %}Draw page{% else %}Details{% endif %}</a>{% endif %}</td></tr>
+    {% empty %}<tr><td colspan="8" class="empty">Rounds are generated when the Equb starts.</td></tr>{% endfor %}</tbody>
+  </table></div>
+</div>
+
+{% else %}
+<div class="grid g-21">
+  <div class="card"><div class="card-h"><h2>Collection per round</h2><span>Expected vs collected</span></div><div class="chart-box"><canvas data-chart="rounds"></canvas></div></div>
+  <div class="card"><div class="card-h"><h2>Contribution status</h2></div><div class="chart-box"><canvas data-chart="status"></canvas></div></div>
+</div>
+<div class="grid g-2 mt">
+  <div class="card">
+    <div class="card-h"><h2>Rounds &amp; draws</h2><span>Commit/reveal fairness</span></div>
+    <ul class="timeline">{% for r in timeline %}
+      <li><span class="tl-dot" style="background:{% if r.status == 'DRAWN' %}var(--green){% elif r.status == 'COLLECTING' %}var(--gold){% else %}#C9D6D0{% endif %}">{{ r.number }}</span>
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;justify-content:space-between;gap:8px"><span class="strong">{% for p in r.payouts.all %}🏆 {{ p.membership.user.full_name }} · {{ p.amount|money }}{% if not forloop.last %}<br>{% endif %}{% empty %}{{ r.get_status_display }}{% endfor %}</span>{{ r.status|status_badge }}</div>
+          <div class="small muted">Due {{ r.due_date|date:"d M Y" }} · draw {{ r.draw_date|date:"d M Y" }} · {{ r.paid }}/{{ r.slips }} paid · {{ r.collected_amount|money }}{% if r.draw_note %} · {{ r.draw_note }}{% endif %}</div>
+          <div class="bar" style="margin:6px 0"><i style="width:{{ r.progress }}%"></i></div>
+          {% if r.status != 'UPCOMING' %}<a class="small strong" href="{% url 'console:equb_round' g.slug r.number %}">{% if r.drawn %}Draw record &amp; verification →{% else %}Eligibility &amp; draw →{% endif %}</a>{% endif %}
+        </div></li>
+    {% empty %}<li class="empty" style="display:block">Rounds are generated when the Equb starts.</li>{% endfor %}</ul>
+    {% if more_upcoming %}<a class="small strong" href="?tab=draws">+ {{ more_upcoming }} more upcoming round{{ more_upcoming|pluralize }} →</a>{% endif %}
+  </div>
+  <div class="card">
+    <div class="card-h"><h2>Member ledger</h2><span>● paid ● credit ● late ● pending</span></div>
+    <div class="table-wrap"><table class="t"><thead><tr><th>#</th><th>Member</th><th>Rounds</th><th>Standing</th><th class="r">Paid</th></tr></thead><tbody>
+    {% for m in ledger %}<tr><td class="muted">{{ m.position }}</td><td><a class="strong" href="{% url 'console:equb_member' m.membership_id %}">{{ m.name }}</a><div class="small muted">{{ m.phone_masked }}</div></td>
+      <td>{% for c in m.contributions %}<span title="Round {{ c.round }}: {{ c.status }}" style="display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:3px;background:{% if c.status == 'PAID' %}var(--green){% elif c.status == 'WAIVED' %}var(--gold){% elif c.status == 'LATE' %}var(--red){% else %}#D5DDD9{% endif %}"></span>{% empty %}<span class="muted small">—</span>{% endfor %}</td>
+      <td>{% if m.has_won %}<span class="badge b-gold">Won R{{ m.won_round }}</span>{% else %}{{ m.standing|standing_badge }}{% endif %}</td>
+      <td class="r num">{{ m.total_paid|money }}</td></tr>
+    {% empty %}<tr><td colspan="5" class="empty">No members yet.</td></tr>{% endfor %}</tbody></table></div>
+  </div>
+</div>
+<div class="grid g-2 mt">
+  <div class="card"><div class="card-h"><h2>Rules members agree to</h2><a href="{% url 'console:equb_rules' %}">Equb rules →</a></div>
+    <ol class="rules-list">{% for line in rules %}<li>{{ line }}</li>{% endfor %}</ol></div>
+  <div class="card"><div class="card-h"><h2>Sharing &amp; pool settings</h2></div>
+    <p style="margin-top:0">Members can join from the app with the code <span class="code-pill">{{ g.join_code }}</span>.</p>
+    <div class="actions" style="justify-content:flex-start">
+      <form method="post" data-confirm="Create a new join code? The current code stops working.">{% csrf_token %}<input type="hidden" name="action" value="new_code"><button class="btn ghost sm">New join code</button></form>
+      {% if g.status == 'OPEN' or g.status == 'DRAFT' %}<form method="post" data-confirm="Cancel this pool? Members can no longer join.">{% csrf_token %}<input type="hidden" name="action" value="cancel_pool"><button class="btn danger sm">Cancel pool</button></form>{% endif %}
+    </div>
+    <dl class="kv" style="margin-top:14px"><dt>Winner receives</dt><dd>{{ g.get_payout_basis_display }}</dd><dt>Draw entry</dt><dd>{% if g.require_paid_to_draw %}Only paid-up members{% else %}All active members{% endif %}</dd><dt>Organiser</dt><dd>{{ g.organizer.full_name|default:"—" }}</dd></dl>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

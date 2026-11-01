@@ -1,0 +1,45 @@
+{% extends "console/base.html" %}{% load console_tags %}
+{% block title %}Settings{% endblock %}{% block heading %}Settings{% endblock %}{% block crumbs %}Reference data &amp; team{% endblock %}
+{% block content %}
+<div class="card" style="margin-bottom:16px">
+  <div class="card-h"><h2>Equb rules</h2><a class="btn sm" href="{% url 'console:equb_rules' %}">Edit Equb rules</a></div>
+  <div class="mini-kpis" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr))">
+    <div><b>{{ equb_rules.warn_at }} / {{ equb_rules.block_at }} / {{ equb_rules.suspend_at }}</b><span>Unpaid rounds to warn / leave out of draws / suspend</span></div>
+    <div><b>{{ equb_rules.reminder_days_before }} day{{ equb_rules.reminder_days_before|pluralize }}</b><span>Reminder before the due date</span></div>
+    <div><b>{{ equb_rules.call_after_days }} / {{ equb_rules.terminate_after_days }} days</b><span>Call centre / termination thresholds</span></div>
+    <div><b>{{ equb_rules.max_advance_rounds }}</b><span>Rounds a member can pay ahead</span></div>
+  </div>
+</div>
+<div class="grid g-2">
+  <div class="card">
+    <div class="card-h"><h2>Airports</h2><a class="btn sm" href="{% url 'console:airport_add' %}">+ Add airport</a></div>
+    <div class="table-wrap"><table class="t"><thead><tr><th>Code</th><th>Airport</th><th>Country</th><th>Flights</th><th></th></tr></thead><tbody>
+    {% for a in airports %}<tr><td class="mono strong">{{ a.iata }}</td><td>{{ a.city }}<div class="small muted">{{ a.name }}</div></td><td class="small">{{ a.country }}</td><td class="num">{{ a.n }}</td><td class="r"><a class="btn ghost sm" href="{% url 'console:airport_edit' a.pk %}">Edit</a></td></tr>
+    {% empty %}<tr><td colspan="5" class="empty">No airports yet. Add Addis Ababa (ADD) first.</td></tr>{% endfor %}</tbody></table></div>
+  </div>
+  <div class="card">
+    <div class="card-h"><h2>Baggage add-ons</h2><a class="btn sm" href="{% url 'console:baggage_add' %}">+ Add option</a></div>
+    <div class="table-wrap"><table class="t"><thead><tr><th>Option</th><th>Weight</th><th class="r">Price</th><th>Status</th><th></th></tr></thead><tbody>
+    {% for b in bags %}<tr><td class="strong">{{ b.name }}<div class="small muted mono">{{ b.code }}{% if b.international_only %} · international only{% endif %}</div></td><td>{{ b.weight_kg }} kg</td><td class="r num">{{ b.price|money }}</td><td>{% if b.is_active %}<span class="badge b-green">Active</span>{% else %}<span class="badge b-grey">Hidden</span>{% endif %}</td><td class="r"><a class="btn ghost sm" href="{% url 'console:baggage_edit' b.pk %}">Edit</a></td></tr>
+    {% empty %}<tr><td colspan="5" class="empty">No baggage options.</td></tr>{% endfor %}</tbody></table></div>
+  </div>
+</div>
+<div class="grid g-21 mt">
+  <div class="card">
+    <div class="card-h"><h2>Staff accounts</h2>{% if request.user.is_superuser %}<a class="btn sm" href="{% url 'console:staff_add' %}">+ Add staff</a>{% endif %}</div>
+    <div class="table-wrap"><table class="t"><thead><tr><th>Name</th><th>Phone</th><th>Role</th><th>Last sign-in</th><th>Status</th><th></th></tr></thead><tbody>
+    {% for u in staff %}<tr><td><div style="display:flex;gap:10px;align-items:center"><span class="avatar">{{ u.full_name|initials }}</span><span class="strong">{{ u.full_name }}</span></div></td>
+      <td class="mono">{{ u.phone }}</td><td>{% if u.is_superuser %}<span class="badge b-gold">Administrator</span>{% else %}<span class="badge b-green">Staff</span>{% endif %}</td>
+      <td class="small">{{ u.last_login|date:"d M Y, H:i"|default:"Never" }}</td><td>{% if u.is_active %}<span class="badge b-green">Active</span>{% else %}<span class="badge b-red">Disabled</span>{% endif %}</td>
+      <td class="r">{% if request.user.is_superuser and u != request.user %}<form method="post" action="{% url 'console:staff_toggle' u.pk %}" data-confirm="{% if u.is_active %}Disable{% else %}Re-enable{% endif %} {{ u.full_name }}?">{% csrf_token %}<button class="btn {% if u.is_active %}danger{% else %}ghost{% endif %} sm">{% if u.is_active %}Disable{% else %}Enable{% endif %}</button></form>{% endif %}</td></tr>
+    {% endfor %}</tbody></table></div>
+  </div>
+  <div class="card">
+    <div class="card-h"><h2>Aircraft seat layouts</h2></div>
+    {% for a in aircraft %}<div style="padding:8px 0;border-bottom:1px solid var(--line)"><span class="strong">{{ a.name }}</span> <span class="mono small muted">{{ a.code }}</span>
+      <div class="small muted">{% for b in a.layout %}{{ b.cabin|title }} rows {{ b.rows.0 }}–{{ b.rows.1 }} ({{ b.letters }}){% if not forloop.last %} · {% endif %}{% endfor %}</div></div>
+    {% empty %}<div class="empty">No aircraft layouts.</div>{% endfor %}
+    <p class="small muted">Seat layouts are technical (rows, aisles, surcharges). Edit them in <a href="/admin/travel/aircrafttype/">data admin</a>.</p>
+  </div>
+</div>
+{% endblock %}

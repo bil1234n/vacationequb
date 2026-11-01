@@ -1,0 +1,101 @@
+{% extends "console/base.html" %}{% load console_tags %}
+{% block title %}Draw now{% endblock %}{% block heading %}Draw now{% endblock %}{% block crumbs %}<a href="{% url 'console:equb_draws' %}">Equb draws</a>{% endblock %}
+{% block actions %}<a class="btn ghost" href="{% url 'console:equb_draw_settings' %}">Draw settings</a>{% endblock %}
+{% block content %}
+{{ data|json_script:"draw-data" }}
+{% if not data %}
+<div class="card"><div class="empty" style="padding:40px 20px">
+  <div style="font-size:34px">🎟️</div>
+  <h3 style="margin:8px 0 4px">No Equb is collecting a round right now</h3>
+  <p class="muted" style="margin:0 0 16px">Start an Equb group to schedule its rounds; each round can be drawn here while it is collecting.</p>
+  <a class="btn" href="{% url 'console:equbs' %}">Go to Equb groups</a></div></div>
+{% else %}
+<form method="post" class="dn-form" data-draw-now-page data-pre-round="{{ pre_round }}" data-pre-method="{{ pre_method }}">{% csrf_token %}
+  <div class="ge-layout">
+    <div class="ge-main">
+
+      <section class="card ge-card" data-step="1">
+        <div class="ge-step"><span>1</span><div><h2>How do you want to draw?</h2><p class="muted">Automatic lets the system pick at random; manual means you choose the winner.</p></div></div>
+        <div class="dn-options two">
+          <label class="dn-option"><input type="radio" name="method" value="auto">
+            <span class="dn-ico">✦</span><span><b>Automatic</b><small>The system picks the winner by itself – a provably-fair random draw among the people who are paid up and haven't won yet.</small></span></label>
+          <label class="dn-option"><input type="radio" name="method" value="manual">
+            <span class="dn-ico">☝</span><span><b>Manual</b><small>You choose who wins: a member by name or phone, or a whole family / friends group.</small></span></label>
+        </div>
+      </section>
+
+      <section class="card ge-card" data-step="2" hidden>
+        <div class="ge-step"><span>2</span><div><h2>Which Equb group?</h2><p class="muted">Equbs collecting a round now. The round being collected is the one that will be drawn.</p></div></div>
+        <div class="dn-chosen" data-chosen hidden></div>
+        <div data-round-picker>
+        <input type="search" class="dn-search" data-search="rounds" placeholder="Search an Equb or package…">
+        <div class="dn-list" data-list="rounds">
+          {% for r in data %}
+          <label class="dn-row" data-text="{{ r.equb|lower }} {{ r.package|lower }}">
+            <input type="radio" name="round" value="{{ r.id }}">
+            <span class="dn-av equb">{{ r.equb|slice:":1"|upper }}</span>
+            <span class="grow"><b>{{ r.equb }}</b><small>{{ r.package|default:"No package" }} · round {{ r.round }} of {{ r.total }} · {{ r.amount|floatformat:"0g" }} ETB {{ r.every }}</small></span>
+            <span class="dn-meta"><span class="badge {% if r.due %}b-gold{% else %}b-grey{% endif %}">{% if r.due %}Due {% else %}Draw {% endif %}{{ r.draw_date }}</span>
+              <small>{{ r.in_draw }} in the draw · {{ r.waiting }} waiting</small></span>
+          </label>
+          {% endfor %}
+        </div>
+        </div>
+      </section>
+
+      <section class="card ge-card" data-step="3" hidden>
+        <div class="ge-step"><span>3</span><div><h2>Who can win?</h2><p class="muted">A single Equb membership, or a Group Equb – a family, friends, workplace or community group inside this Equb.</p></div></div>
+        <div class="dn-options two">
+          <label class="dn-option"><input type="radio" name="scope" value="member">
+            <span class="dn-ico">👤</span><span><b>Equb membership</b><small data-scope-sub="member">One member of the Equb.</small></span></label>
+          <label class="dn-option" data-scope-group><input type="radio" name="scope" value="group">
+            <span class="dn-ico">👪</span><span><b>Group Equb</b><small data-scope-sub="group">A family or friends group.</small></span></label>
+        </div>
+      </section>
+
+      <section class="card ge-card" data-step="4" hidden>
+        <div class="ge-step"><span>4</span><div><h2 data-step4-title>Choose the winner</h2><p class="muted" data-step4-sub></p></div></div>
+        <div data-pane="auto-member" hidden>
+          <div class="dn-callout"><b data-auto-count></b><span>The system picks at random among everyone below. Members who are left out are shown with the reason.</span></div>
+        </div>
+        <div data-pane="people" hidden>
+          <input type="search" class="dn-search" data-search="people" placeholder="Search by name or phone…">
+          <div class="dn-filter chips"><button type="button" class="chip on" data-pf="all">All waiting</button><button type="button" class="chip" data-pf="in">In the draw</button><button type="button" class="chip" data-pf="out">Left out</button></div>
+          <div class="dn-list" data-list="people"></div>
+        </div>
+        <div data-pane="teams" hidden>
+          <input type="search" class="dn-search" data-search="teams" placeholder="Search a group by name or code…">
+          <div class="dn-list" data-list="teams"></div>
+          <div class="dn-callout" data-team-members hidden></div>
+        </div>
+        <div class="field" data-note hidden style="margin-top:16px">
+          <label>Reason <span class="req" data-note-req hidden>*</span></label>
+          <textarea name="note" rows="2" maxlength="255" placeholder="e.g. Agreed at the members' meeting"></textarea>
+          <span class="helptext" data-note-help>Optional – saved with the draw.</span>
+        </div>
+      </section>
+    </div>
+
+    <aside class="ge-side">
+      <div class="card ge-summary">
+        <div class="small strong muted" style="text-transform:uppercase;letter-spacing:.06em">Draw summary</div>
+        <h3 data-s="equb">Choose an Equb group</h3>
+        <dl class="kv ge-kv">
+          <dt>Method</dt><dd data-s="method">—</dd>
+          <dt>Round</dt><dd data-s="round">—</dd>
+          <dt>Draw date</dt><dd data-s="date">—</dd>
+          <dt>Winner from</dt><dd data-s="scope">—</dd>
+          <dt>In the draw</dt><dd data-s="pool">—</dd>
+          <dt class="strong">Winners</dt><dd class="strong" data-s="k">—</dd>
+          <dt class="strong">Each winner gets</dt><dd class="strong" data-s="pay">—</dd>
+        </dl>
+        <div class="mem-picked" data-s="names"></div>
+        <div class="note-box red" data-s="warn" hidden></div>
+        <button class="btn gold dn-go" type="submit" disabled data-go>✦ Draw now</button>
+        <p class="small muted" style="margin:10px 0 0">A draw can't be undone. Winners are notified and get a travel payout voucher.</p>
+      </div>
+    </aside>
+  </div>
+</form>
+{% endif %}
+{% endblock %}

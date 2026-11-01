@@ -1,0 +1,40 @@
+{% extends "console/base.html" %}{% load console_tags %}
+{% block title %}{{ g.title }}{% endblock %}{% block heading %}{{ g.title }}{% endblock %}
+{% block crumbs %}<a href="{% url 'console:giveaways' %}">Community Finance &amp; Impact</a> / Giveaways{% endblock %}
+{% block actions %}
+  {% if g.status == 'LIVE' or g.status == 'SCHEDULED' %}<form method="post" style="display:inline">{% csrf_token %}<input type="hidden" name="action" value="recount"><button class="btn ghost">Recount referrals</button></form>{% endif %}
+  {% if g.status == 'LIVE' %}<form method="post" style="display:inline" data-confirm="Close referrals now? Nobody can earn new entries after this.">{% csrf_token %}<input type="hidden" name="action" value="close"><button class="btn ghost">Close referrals</button></form>{% endif %}
+  {% if g.status == 'LIVE' or g.status == 'CLOSED' %}<form method="post" style="display:inline" data-confirm="Run the free random draw now? Referrals close and {{ g.number_of_winners }} winner(s) are picked among {{ g.entries_issued }} entries. This cannot be undone.">{% csrf_token %}<input type="hidden" name="action" value="draw"><button class="btn gold" {% if not g.entries_issued %}disabled title="Nobody has earned an entry yet"{% endif %}>✦ Run draw</button></form>{% endif %}
+  {% if g.status != 'DRAWN' %}<a class="btn ghost" href="{% url 'console:giveaway_edit' g.slug %}">Edit</a>{% endif %}
+{% endblock %}
+{% block content %}
+<div class="hero">
+  <div style="display:flex;gap:18px;align-items:center"><span class="avatar lg" style="background:var(--gold);color:var(--green)">🎁</span>
+    <div><div class="muted small">{{ g.status|status_badge }} · {{ g.starts_at|date:"d M" }} → {{ g.ends_at|date:"d M Y, H:i" }} · draw {{ g.draw_at|date:"d M, H:i" }}</div>
+      <h2>{{ g.prize_title }}</h2>
+      <div class="muted">{{ g.number_of_winners }} winner{{ g.number_of_winners|pluralize }} × {{ g.prize_value|money }} · sponsored by <b style="color:#fff">{{ g.sponsor_name }}</b>{% if g.sponsor_note %} – {{ g.sponsor_note }}{% endif %}</div></div></div>
+  <div class="stats"><div><b>{{ g.referrals_count }}</b><span>Friends registered</span></div><div><b>{{ g.entries_issued }}</b><span>Free entries</span></div><div><b>{{ g.participants_count }}</b><span>Inviters</span></div><div><b>{{ g.referrals_per_entry }}</b><span>Friends = 1 entry</span></div></div>
+</div>
+
+<div class="note-box mt">Entry is free. Each person gets <b>one entry for every {{ g.referrals_per_entry }} friends</b> who register on Rihla with their referral code between {{ g.starts_at|date:"d M, H:i" }} and {{ g.ends_at|date:"d M, H:i" }}{% if g.max_entries_per_user %}, up to {{ g.max_entries_per_user }} entries{% endif %}. The prize is paid by {{ g.sponsor_name }} – no donations or payments are involved.</div>
+
+<div class="grid g-21 mt">
+  <div class="card"><div class="card-h"><h2>Free entries earned per day</h2></div><div class="chart-box sm"><canvas data-chart="daily"></canvas></div></div>
+  <div class="card"><div class="card-h"><h2>Winners</h2></div>
+    {% for w in winners %}<div style="padding:9px 0;border-bottom:1px solid var(--line)"><div style="display:flex;justify-content:space-between"><b>#{{ w.rank }} <a href="{% url 'console:user' w.user_id %}">{{ w.user.full_name }}</a></b><span class="num">entry #{{ w.ticket_number }}</span></div>
+      <div class="small muted"><span class="mono">{{ w.voucher_code }}</span> · {{ w.prize_value|money }} · {% if w.claimed_at %}claimed {{ w.claimed_at|date:"d M" }}{% if w.claimed_booking %} on {{ w.claimed_booking.reference }}{% endif %}{% else %}not claimed yet{% endif %}</div></div>
+    {% empty %}<div class="empty">{% if g.status == 'DRAWN' %}No winners.{% else %}Winners are picked at random when the draw runs.{% endif %}</div>{% endfor %}
+    {% if verification.drawn %}<div class="msg {% if verification.matches %}success{% else %}error{% endif %}" style="margin-top:12px">{% if verification.matches %}✓ Verified – the recorded winners match a fresh re-computation of the draw.{% else %}✗ Verification failed.{% endif %}</div>{% endif %}
+    <div class="small muted" style="margin-top:10px">Commitment: <span class="mono" style="word-break:break-all">{{ g.seed_commitment }}</span></div>
+  </div>
+</div>
+
+<div class="card mt"><div class="card-h"><h2>Referral leaderboard</h2><span class="muted small">{{ close_to }} inviter{{ close_to|pluralize }} still working towards their first entry</span></div>
+  <div class="table-wrap"><table class="t"><thead><tr><th>#</th><th>Inviter</th><th style="min-width:220px">Progress to next entry</th><th class="r">Friends registered</th><th class="r">Free entries</th></tr></thead><tbody>
+  {% for p in participants %}<tr><td class="num muted">{{ forloop.counter }}</td><td><a class="strong" href="{% url 'console:user' p.user_id %}">{{ p.user.full_name }}</a><div class="small muted">{{ p.user.phone|tel }} · code <span class="mono">{{ p.user.referral_code }}</span></div></td>
+    <td>{% with r=p.referrals|modulo:g.referrals_per_entry %}<div style="display:flex;gap:8px;align-items:center"><div class="bar" style="flex:1"><i style="width:{% widthratio r g.referrals_per_entry 100 %}%"></i></div><span class="small num">{{ r }}/{{ g.referrals_per_entry }}</span></div>{% endwith %}</td>
+    <td class="r num">{{ p.referrals }}</td><td class="r num strong">{{ p.entries }}</td></tr>
+  {% empty %}<tr><td colspan="5" class="empty">No referrals yet. Customers find their code in the app under Community → Giveaways.</td></tr>{% endfor %}</tbody></table></div></div>
+
+{% if g.description %}<div class="card mt"><div class="card-h"><h2>About</h2></div><p style="margin:0;white-space:pre-line">{{ g.description }}</p></div>{% endif %}
+{% endblock %}

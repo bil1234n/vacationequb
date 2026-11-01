@@ -1,0 +1,29 @@
+{% extends "console/base.html" %}{% load console_tags %}
+{% block title %}Manifest {{ f.flight_number }}{% endblock %}{% block heading %}Passenger manifest · {{ f.flight_number }}{% endblock %}
+{% block crumbs %}<a href="{% url 'console:flights' %}">Flights</a> / <a href="{% url 'console:flight' f.pk %}">{{ f.flight_number }} {{ f.departure_time|date:"d M" }}</a> / Manifest{% endblock %}
+{% block actions %}<button class="btn ghost no-print" onclick="window.print()">Print</button><a class="btn no-print" href="?export=csv">Download CSV</a>{% endblock %}
+{% block content %}
+<div class="card">
+  <div style="display:flex;justify-content:space-between;gap:20px;flex-wrap:wrap;align-items:flex-start">
+    <div><div class="muted small">{{ f.airline_name }} · {{ f.aircraft.name }}</div>
+      <h2 style="margin:4px 0">{{ f.flight_number }} · {{ f.origin.city }} ({{ f.origin.iata }}) → {{ f.destination.city }} ({{ f.destination.iata }})</h2>
+      <div class="muted">Departs {{ f.departure_time|date:"D d M Y, H:i" }}{% if f.terminal %} · Terminal {{ f.terminal }}{% endif %}{% if f.gate %} · Gate {{ f.gate }}{% endif %} · {{ f.get_status_display }}</div></div>
+    <div class="mini-kpis" style="min-width:320px"><div><b>{{ total }}</b><span>Passengers{% if infants %} ({{ infants }} inf){% endif %}</span></div>
+      <div><b>{{ statuses.CHECKED_IN|add:statuses.BOARDED }}</b><span>Checked in</span></div><div><b>{{ statuses.BOARDED }}</b><span>Boarded</span></div></div>
+  </div>
+</div>
+<div class="card mt">
+  <div class="table-wrap" style="margin-top:-20px"><table class="t manifest"><thead><tr><th>Seat</th><th>Passenger</th><th>Type</th><th>Nationality · passport</th><th>Booking</th><th>Ticket</th><th>Baggage</th><th>Status</th></tr></thead><tbody>
+  {% for p in pax %}<tr>
+    <td class="seat-no">{{ p.seat.number|default:"—" }}</td>
+    <td><b>{{ p.last_name|upper }}</b>, {{ p.first_name }}<div class="small muted">{{ p.get_gender_display }} · {{ p.date_of_birth|date:"d M Y" }}</div>{% if p.special_requests %}<div class="small gold-text">{{ p.special_requests }}</div>{% endif %}</td>
+    <td>{{ p.passenger_type }}</td>
+    <td>{{ p.nationality }} · <span class="mono">{{ p.passport_number|default:"—" }}</span>{% if p.passport_expiry %}<div class="small muted">exp {{ p.passport_expiry|date:"d M Y" }}</div>{% endif %}</td>
+    <td><a class="mono" href="{% url 'console:booking' p.booking.reference %}">{{ p.booking.reference }}</a><div class="small muted">{{ p.booking.fare_class.name }}</div></td>
+    <td class="mono small">{{ p.ticket.ticket_number|default:"—" }}</td>
+    <td class="small">{{ p.booking.fare_class.checked_baggage_kg }} kg{% for bag in p.baggage.all %}<br>+{{ bag.quantity }}× {{ bag.option.weight_kg }} kg{% endfor %}</td>
+    <td>{% if p.ticket %}{{ p.ticket.status|status_badge }}{% else %}—{% endif %}</td></tr>
+  {% empty %}<tr><td colspan="8" class="empty">No confirmed passengers on this flight.</td></tr>{% endfor %}</tbody></table></div>
+</div>
+<p class="small muted" style="margin:12px 4px 0">Printed {{ printed|date:"d M Y, H:i" }} by {{ request.user.full_name }} · Rihla Travel</p>
+{% endblock %}

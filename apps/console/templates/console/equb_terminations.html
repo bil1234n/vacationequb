@@ -1,0 +1,65 @@
+{% extends "console/base.html" %}{% load console_tags %}
+{% block title %}Terminations{% endblock %}{% block heading %}Terminations &amp; exit requests{% endblock %}{% block crumbs %}Equb{% endblock %}
+{% block actions %}<a class="btn ghost" href="{% url 'console:call_center' %}">Call centre</a>{% endblock %}
+{% block content %}
+<div class="tabs">
+  {% for key, label in tabs %}<a href="?tab={{ key }}" class="{% if tab == key %}on{% endif %}">{{ label }} <span class="count {% if key != 'terminated' and counts|get_item:key %}alert{% endif %}">{{ counts|get_item:key }}</span></a>{% endfor %}
+</div>
+
+{% if tab == 'terminated' %}
+<div class="strip"><div><div class="label">Terminated places</div><div class="value">{{ debt.count }}</div><div class="sub">not reinstated</div></div>
+  <div><div class="label">Owed at termination</div><div class="value red">{{ debt.amount|money }}</div><div class="sub">still to recover</div></div></div>
+<div class="card mt"><div class="table-wrap"><table class="t">
+  <thead><tr><th>Date</th><th>Member</th><th>Pool</th><th>Reason</th><th class="r">Owed</th><th class="r">Had paid</th><th>By</th><th></th></tr></thead>
+  <tbody>{% for t in page %}<tr class="{% if t.reinstated_at %}muted{% endif %}">
+    <td class="small">{{ t.created_at|date:"d M Y" }}</td>
+    <td><a class="strong" href="{% url 'console:equb_member' t.membership_id %}">{{ t.membership.user.full_name }}</a><div class="small">{{ t.membership.user.phone|tel }}</div></td>
+    <td class="small">{{ t.membership.group.name }}{% if t.had_won %}<div><span class="badge b-gold">Had won</span></div>{% endif %}</td>
+    <td>{{ t.get_reason_display }}{% if t.note %}<div class="small muted">{{ t.note|truncatechars:70 }}</div>{% endif %}</td>
+    <td class="r num {% if t.arrears_at_termination %}strong{% endif %}">{{ t.arrears_at_termination|money }}</td><td class="r num">{{ t.paid_at_termination|money }}</td>
+    <td class="small">{{ t.terminated_by.full_name|default:"—" }}</td>
+    <td class="r">{% if t.reinstated_at %}<span class="badge b-green">Reinstated {{ t.reinstated_at|date:"d M" }}</span>{% elif t.membership.group.status == 'ACTIVE' %}
+      <form method="post" data-confirm="Reinstate {{ t.membership.user.full_name }}? They are billed again from the current round.">{% csrf_token %}<input type="hidden" name="action" value="reinstate"><input type="hidden" name="termination" value="{{ t.pk }}"><input type="hidden" name="next" value="{{ request.get_full_path }}"><button class="btn ghost sm">Reinstate</button></form>{% endif %}</td></tr>
+  {% empty %}<tr><td colspan="8" class="empty">No terminations yet.</td></tr>{% endfor %}</tbody>
+</table></div>{% include "console/_pagination.html" %}</div>
+
+{% else %}
+{% if tab == 'exits' %}<div class="note-box green">Members ask to leave a running Equb from the app. Approving closes the place (recorded as “Member asked to leave”); declining keeps it and sends them your message.</div>
+{% elif tab == 'candidates' %}<div class="note-box">Places {{ rules.terminate_after_days }}+ days overdue that aren't on the termination list yet. Call them first – add them to the list if they can't pay.</div>
+{% else %}<div class="note-box red">Places sent here by the call centre, by staff, or automatically after {{ rules.suspend_at }} unpaid rounds. Terminate or keep each one.</div>{% endif %}
+<div class="card mt"><div class="table-wrap"><table class="t">
+  <thead><tr><th>Member</th><th>Pool</th><th>Standing</th><th>Overdue</th><th class="r">Owes</th><th class="r">Paid</th><th>{% if tab == 'exits' %}Reason given{% else %}Note{% endif %}</th><th></th></tr></thead>
+  <tbody>{% for r in page %}<tr class="{% if r.s.critical %}critical{% endif %}">
+    <td><a class="strong" href="{% url 'console:equb_member' r.m.pk %}">{{ r.m.user.full_name }}</a><div class="small">{{ r.m.user.phone|tel }}</div></td>
+    <td class="small">{{ r.m.group.name }}<div class="muted">#{{ r.m.position }}{% if r.m.has_won %} · 🏆 won R{{ r.s.won_round }}{% endif %}</div></td>
+    <td>{{ r.s.status|standing_badge }}</td><td>{{ r.s.days_overdue|days_badge }}</td><td class="r num strong">{{ r.s.arrears|money }}</td><td class="r num">{{ r.m.total_paid|money }}</td>
+    <td class="small" style="max-width:220px">{% if tab == 'exits' %}“{{ r.m.exit_request_reason|truncatechars:90 }}”<div class="muted">{{ r.m.exit_requested_at|date:"d M Y" }}</div>{% else %}{{ r.m.termination_note|default:"—"|truncatechars:90 }}{% endif %}</td>
+    <td class="r"><div class="actions">
+      {% if tab == 'exits' %}
+        <form method="post" data-confirm="Approve the exit for {{ r.m.user.full_name }}? The place is closed.">{% csrf_token %}<input type="hidden" name="action" value="approve_exit"><input type="hidden" name="membership" value="{{ r.m.pk }}"><input type="hidden" name="next" value="{{ request.get_full_path }}"><button class="btn sm">Approve</button></form>
+        <button class="btn ghost sm" data-open="decline-dialog" data-fill='{"membership":"{{ r.m.pk }}","who":"{{ r.m.user.full_name|escapejs }}"}'>Decline</button>
+      {% elif tab == 'candidates' %}
+        <form method="post">{% csrf_token %}<input type="hidden" name="action" value="flag"><input type="hidden" name="membership" value="{{ r.m.pk }}"><input type="hidden" name="note" value="{{ r.s.days_overdue }} days overdue"><input type="hidden" name="next" value="{{ request.get_full_path }}"><button class="btn ghost sm">Add to list</button></form>
+        <button class="btn danger sm" data-open="terminate-dialog" data-fill='{"membership":"{{ r.m.pk }}","who":"{{ r.m.user.full_name|escapejs }}","owed":"{{ r.s.arrears|money }}"}'>Terminate</button>
+      {% else %}
+        <button class="btn danger sm" data-open="terminate-dialog" data-fill='{"membership":"{{ r.m.pk }}","who":"{{ r.m.user.full_name|escapejs }}","owed":"{{ r.s.arrears|money }}"}'>Terminate</button>
+        <form method="post">{% csrf_token %}<input type="hidden" name="action" value="keep"><input type="hidden" name="membership" value="{{ r.m.pk }}"><input type="hidden" name="next" value="{{ request.get_full_path }}"><button class="btn ghost sm">Keep</button></form>
+      {% endif %}</div></td></tr>
+  {% empty %}<tr><td colspan="8" class="empty">{% if tab == 'exits' %}No exit requests.{% elif tab == 'candidates' %}No one is {{ rules.terminate_after_days }}+ days overdue.{% else %}The termination list is empty.{% endif %}</td></tr>{% endfor %}</tbody>
+</table></div>{% include "console/_pagination.html" %}</div>
+{% endif %}
+
+<dialog class="modal" id="terminate-dialog"><form method="post">{% csrf_token %}<input type="hidden" name="action" value="terminate"><input type="hidden" name="membership"><input type="hidden" name="next" value="{{ request.get_full_path }}">
+  <div class="modal-h"><h3>Terminate – <span data-text="who"></span></h3><button type="button" class="x" data-close>&times;</button></div>
+  <div class="modal-b"><div class="note-box red" style="margin-bottom:12px">The member leaves the Equb, stops being billed and won't enter draws. Owed now: <b data-text="owed"></b>.</div>
+    <div class="field"><label>Reason</label><select name="reason">{% for v, l in reasons %}<option value="{{ v }}">{{ l }}</option>{% endfor %}</select></div>
+    <div class="field"><label>Note</label><textarea name="note" rows="3" placeholder="Internal note"></textarea></div>
+    <label class="check-row"><input type="checkbox" name="notify" value="1" checked> Notify the member</label></div>
+  <div class="modal-f"><button type="button" class="btn ghost" data-close>Cancel</button><button class="btn danger">Terminate place</button></div>
+</form></dialog>
+<dialog class="modal" id="decline-dialog"><form method="post">{% csrf_token %}<input type="hidden" name="action" value="decline_exit"><input type="hidden" name="membership"><input type="hidden" name="next" value="{{ request.get_full_path }}">
+  <div class="modal-h"><h3>Decline – <span data-text="who"></span></h3><button type="button" class="x" data-close>&times;</button></div>
+  <div class="modal-b"><div class="field"><label>Message to the member</label><textarea name="note" rows="3" placeholder="e.g. We'll call you to discuss a payment plan."></textarea></div></div>
+  <div class="modal-f"><button type="button" class="btn ghost" data-close>Cancel</button><button class="btn">Decline request</button></div>
+</form></dialog>
+{% endblock %}

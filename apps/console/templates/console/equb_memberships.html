@@ -1,0 +1,31 @@
+{% extends "console/base.html" %}{% load console_tags %}
+{% block title %}Equb memberships{% endblock %}{% block heading %}Equb memberships{% endblock %}{% block crumbs %}Equb{% endblock %}
+{% block actions %}<a class="btn ghost" href="{% qs export='csv' page=None %}">Export CSV</a><a class="btn" href="{% url 'console:equb_membership_add' %}{% if group %}?group={{ group }}{% endif %}">+ New membership</a>{% endblock %}
+{% block content %}
+<form class="toolbar" method="get">
+  <input class="grow" type="search" name="q" value="{{ q }}" placeholder="Search member name, phone or group…">
+  <select name="package" onchange="this.form.group.value='';this.form.submit()"><option value="">All packages</option>{% for p in packages %}<option value="{{ p.slug }}" {% if p.slug == package %}selected{% endif %}>{{ p.name }}</option>{% endfor %}</select>
+  <select name="group"><option value="">All groups</option>{% for g in groups %}<option value="{{ g.slug }}" {% if g.slug == group %}selected{% endif %}>{{ g.name }}</option>{% endfor %}</select>
+  <select name="status"><option value="">All statuses</option>{% for v, l in statuses %}<option value="{{ v }}" {% if v == status %}selected{% endif %}>{{ l }}</option>{% endfor %}</select>
+  <button class="btn" type="submit">Filter</button>{% if q or package or group or status %}<a class="btn ghost" href="?">Reset</a>{% endif %}
+</form>
+<div class="card">
+  <div class="card-h"><h2>{{ total }} membership{{ total|pluralize }}</h2></div>
+  <div class="table-wrap"><table class="t">
+    <thead><tr><th>Package</th><th>Group</th><th>Member</th><th>Place</th><th class="r">Amount</th><th>Standing</th><th class="r">Paid</th><th class="r">Owes</th><th>Status</th><th>Joined</th></tr></thead>
+    <tbody>{% for r in rows %}{% with m=r.m s=r.s %}<tr>
+      <td class="small">{% if m.group.equb_package %}<a href="{% url 'console:equb_package' m.group.equb_package.slug %}">{{ m.group.equb_package.name|truncatechars:32 }}</a>{% else %}—{% endif %}</td>
+      <td><a href="{% url 'console:equb' m.group.slug %}">{{ m.group.name }}</a></td>
+      <td><a class="strong" href="{% url 'console:equb_member' m.pk %}">{{ m.user.full_name }}</a><div class="small">{{ m.user.phone|tel }}</div></td>
+      <td class="num">#{{ m.position }}{% if m.has_won %} <span class="badge b-gold">Won{% if m.won_round %} R{{ m.won_round.number }}{% endif %}</span>{% endif %}</td>
+      <td class="r num">{{ m.group.contribution_amount|money }}<div class="small muted">{{ m.group.get_frequency_display|lower }}</div></td>
+      <td>{{ s.status|standing_badge }}</td>
+      <td class="r num">{{ m.total_paid|money }}</td>
+      <td class="r num {% if s.arrears %}strong{% endif %}" {% if s.arrears %}style="color:var(--red)"{% endif %}>{{ s.arrears|money }}</td>
+      <td>{{ m.status|status_badge }}</td>
+      <td class="small muted nowrap">{{ m.created_at|date:"d M Y" }}</td></tr>{% endwith %}
+    {% empty %}<tr><td colspan="10" class="empty">No memberships match. <a href="{% url 'console:equb_membership_add' %}">Add a member →</a></td></tr>{% endfor %}</tbody>
+  </table></div>
+  {% include "console/_pagination.html" %}
+</div>
+{% endblock %}

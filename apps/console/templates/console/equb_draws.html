@@ -1,0 +1,102 @@
+{% extends "console/base.html" %}{% load console_tags %}
+{% block title %}Equb draws{% endblock %}{% block heading %}Equb draws{% endblock %}{% block crumbs %}Equb{% endblock %}
+{% block actions %}
+  <a class="btn ghost" href="{% url 'console:equb_draw_settings' %}"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-3px;margin-right:4px"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></svg>Draw settings</a>
+  <a class="btn gold" href="{% url 'console:equb_draw_now' %}">✦ Draw now</a>
+{% endblock %}
+{% block content %}
+<p class="muted" style="margin:-6px 0 18px">Every round ever run, with the group it was drawn from. Run a fair random draw or pick the winner yourself.</p>
+
+<div class="grid g-4">
+  <div class="card kpi"><div class="label">Rounds run</div><div class="value">{{ kpi.rounds }}</div><div class="sub gold-text">{{ kpi.rounds_week }} in the last 7 days · {{ kpi.running }} Equb{{ kpi.running|pluralize }} running</div></div>
+  <div class="card kpi"><div class="label">Won by members</div><div class="value">{{ kpi.won|compact }} <small style="font-size:14px">ETB</small></div><div class="sub" style="color:var(--green)">{{ kpi.winners }} winner{{ kpi.winners|pluralize }} across every round</div></div>
+  <div class="card kpi {% if kpi.due_now %}gold{% endif %}"><div class="label">Due for a draw</div><div class="value">{{ kpi.due_now }}</div><div class="sub">{{ kpi.due_manual }} manual · {{ kpi.waiting }} member{{ kpi.waiting|pluralize }} still waiting to win</div></div>
+  <div class="card kpi"><div class="label">Verifiable rounds</div><div class="value">{{ kpi.verifiable }}%</div><div class="sub" style="color:var(--green)">{{ kpi.random }} of {{ kpi.rounds }} drawn at random ✓</div></div>
+</div>
+
+<div class="tabs mt-l">
+  <a href="?tab=due" class="{% if tab == 'due' %}on{% endif %}">Due for draw <span class="count {% if kpi.due_now %}alert{% endif %}">{{ kpi.due_now }}</span></a>
+  <a href="?tab=history" class="{% if tab == 'history' %}on{% endif %}">Draw history <span class="count">{{ kpi.rounds }}</span></a>
+  <a href="?tab=payouts" class="{% if tab == 'payouts' %}on{% endif %}">Winner payouts{% if liability.issued_count %} <span class="count">{{ liability.issued_count }}</span>{% endif %}</a>
+</div>
+
+<div class="card">
+  <form class="toolbar" method="get" style="margin-bottom:6px"><input type="hidden" name="tab" value="{{ tab }}">
+    <input class="grow" type="search" name="q" value="{{ q }}" placeholder="{% if tab == 'due' %}Search group…{% else %}Search group, winner, phone or voucher…{% endif %}">
+    <select name="pool"><option value="">All groups</option>{% for p in pool_choices %}<option value="{{ p.id }}" {% if pool == p.id|stringformat:"s" %}selected{% endif %}>{{ p.name }}</option>{% endfor %}</select>
+    {% if tab == 'due' %}<select name="when"><option value="">All coming draws</option><option value="now" {% if when == 'now' %}selected{% endif %}>Due now</option></select>{% endif %}
+    {% if tab == 'history' %}<select name="mode"><option value="">Random &amp; selected</option><option value="RANDOM" {% if mode == 'RANDOM' %}selected{% endif %}>Random draws</option><option value="SELECTED" {% if mode == 'SELECTED' %}selected{% endif %}>Selected by staff</option></select>{% endif %}
+    {% if tab == 'payouts' %}<select name="status"><option value="">All payouts</option>{% for v, l in statuses %}<option value="{{ v }}" {% if status == v %}selected{% endif %}>{{ l }}</option>{% endfor %}</select>{% endif %}
+    <button class="btn" type="submit">Filter</button>
+    {% if tab == 'history' %}<a class="btn ghost" href="{% qs export='csv' page=None %}">Export CSV</a>{% endif %}
+  </form>
+
+{% if tab == 'due' %}
+  <div class="table-wrap"><table class="t">
+    <thead><tr><th>Equb</th><th>Round</th><th>Draw date</th><th>Draw type</th><th style="width:150px">Paid</th><th>In the draw</th><th class="r">Pot</th><th></th></tr></thead>
+    <tbody>{% for r in page %}<tr>
+      <td><a class="strong" href="{% url 'console:equb' r.group.slug %}">{{ r.group.name }}</a><div class="small muted">{% if r.group.equb_package %}{{ r.group.equb_package.name|truncatechars:34 }}{% endif %}</div></td>
+      <td class="num">{{ r.number }}/{{ r.group.total_rounds }}</td>
+      <td class="nowrap">{{ r.draw_date|date:"d M Y" }}<div class="small">{% if r.is_due %}<span class="badge b-red">Due{% if r.days < 0 %} · {{ r.days|neg }}d late{% endif %}</span>{% else %}<span class="muted">in {{ r.days }} day{{ r.days|pluralize }}</span>{% endif %}</div></td>
+      <td>{% if r.group.draw_type == 'MANUAL' %}<span class="badge b-gold">Manual</span>{% else %}<span class="badge b-green">Automatic</span>{% endif %}</td>
+      <td><div style="display:flex;gap:8px;align-items:center"><div class="bar" style="flex:1"><i style="width:{% widthratio r.paid r.slips|default:1 100 %}%"></i></div><span class="small num">{{ r.paid }}/{{ r.slips }}</span></div></td>
+      <td class="num">{{ r.eligible }} <span class="small muted">of {{ r.waiting }} waiting</span></td>
+      <td class="r num">{{ r.expected_amount|money }}</td>
+      <td class="r nowrap"><a class="btn {% if r.is_due %}gold{% else %}ghost{% endif %} sm" href="{% url 'console:equb_draw_now' %}?round={{ r.pk }}">Draw now</a>
+        <a class="btn ghost sm" href="{% url 'console:equb_round' r.group.slug r.number %}">Open</a></td></tr>
+    {% empty %}<tr><td colspan="8" class="empty">No rounds are waiting for a draw{% if q or pool or when %} with these filters{% endif %}.</td></tr>{% endfor %}</tbody>
+  </table></div>
+
+{% elif tab == 'history' %}
+  <div class="table-wrap"><table class="t">
+    <thead><tr><th>Round</th><th>Draw date</th><th>Equb</th><th>Winner</th><th>Winner phone</th><th class="r">Won amount</th><th>Payout</th><th>Odds</th><th>Mode</th><th></th></tr></thead>
+    <tbody>{% for d in page %}{% with r=d.round %}<tr>
+      <td class="num strong">{{ r.number }}</td>
+      <td class="nowrap">{{ d.executed_at|date:"d M Y, H:i" }}<div class="small muted">{{ d.executed_at|timesince }} ago</div></td>
+      <td><a href="{% url 'console:equb' r.group.slug %}">{{ r.group.name }}</a>{% if r.group.equb_package %}<div class="small muted">{{ r.group.equb_package.name|truncatechars:30 }}</div>{% endif %}</td>
+      <td>{% for p in r.payouts.all %}<div><a class="strong" href="{% url 'console:equb_member' p.membership_id %}">🏆 {{ p.membership.user.full_name }}</a></div>{% empty %}—{% endfor %}</td>
+      <td class="small">{% for p in r.payouts.all %}<div>{{ p.membership.user.phone|tel }}</div>{% endfor %}</td>
+      <td class="r num">{% for p in r.payouts.all %}<div>{{ p.amount|money }}</div>{% endfor %}</td>
+      <td>{% for p in r.payouts.all %}<div>{{ p.status|status_badge }}</div>{% endfor %}</td>
+      <td class="small nowrap">{% with n=d.eligible_memberships|length %}{% if n %}<span class="gold-text strong">{% widthratio r.payouts.count n 100 %}%</span><div class="muted">of {{ n }} entr{{ n|pluralize:"y,ies" }}</div>{% else %}—{% endif %}{% endwith %}</td>
+      <td>{% if d.mode == 'SELECTED' %}<span class="badge b-gold" title="{{ d.note }}">Selected</span>{% else %}<span class="badge b-green">Random</span>{% endif %}<div class="small muted">{{ d.executed_by.full_name|default:"Automatic" }}</div></td>
+      <td class="r"><a class="btn ghost xs" href="{% url 'console:equb_round' r.group.slug r.number %}">View</a></td></tr>{% endwith %}
+    {% empty %}<tr><td colspan="10" class="empty">No draws yet{% if q or pool or mode %} with these filters{% endif %}.</td></tr>{% endfor %}</tbody>
+  </table></div>
+
+{% else %}
+  <div class="strip" style="margin:6px 0 16px">
+    <div><div class="label">Paid to winners</div><div class="value">{{ agg.s|default:0|money }}</div><div class="sub">{{ agg.n|default:0 }} payout{{ agg.n|pluralize }}</div></div>
+    <div><div class="label">Not yet used</div><div class="value gold-text">{{ liability.issued_amount|money }}</div><div class="sub">{{ liability.issued_count }} voucher{{ liability.issued_count|pluralize }}</div></div>
+    <div><div class="label">Used on bookings</div><div class="value">{{ by_status|get_item:"REDEEMED"|default:0|money }}</div><div class="sub">redeemed as travel</div></div>
+    <div><div class="label">Service fees</div><div class="value">{{ agg.fee|default:0|money }}</div><div class="sub">from {{ agg.gross|default:0|compact }} gross pots</div></div>
+  </div>
+  <div class="table-wrap"><table class="t"><thead><tr><th>Date</th><th>Winner</th><th>Equb</th><th>Voucher</th><th>Status</th><th>Used / paid</th><th class="r">Amount</th><th></th></tr></thead><tbody>
+  {% for p in page %}<tr>
+    <td class="small">{{ p.created_at|date:"d M Y" }}</td>
+    <td><a class="strong" href="{% url 'console:equb_member' p.membership_id %}">{{ p.membership.user.full_name }}</a><div class="small">{{ p.membership.user.phone|tel }}</div></td>
+    <td class="small">{{ p.round.group.name }}<div class="muted">Round {{ p.round.number }}</div></td><td class="mono">{{ p.voucher_code }}</td><td>{{ p.status|status_badge }}</td>
+    <td class="small">{% if p.booking %}<a href="{% url 'console:booking' p.booking.reference %}">{{ p.booking.reference }}</a> · {{ p.redeemed_at|date:"d M" }}{% elif p.paid_out_at %}{{ p.paid_out_method }} {{ p.paid_out_reference }} · {{ p.paid_out_at|date:"d M" }}<div class="muted">by {{ p.paid_out_by.full_name|default:"staff" }}</div>{% else %}—{% endif %}</td>
+    <td class="r num strong">{{ p.amount|money }}<div class="small muted">fee {{ p.fee_amount|money }}</div></td>
+    <td class="r">{% if p.status == 'ISSUED' %}<button class="btn ghost sm" data-open="payout-dialog" data-fill='{"payout":"{{ p.pk }}","who":"{{ p.membership.user.full_name|escapejs }}","amount":"{{ p.amount|money }}"}'>Pay out</button>{% endif %}</td></tr>
+  {% empty %}<tr><td colspan="8" class="empty">No payouts{% if q or pool or status %} with these filters{% else %} yet{% endif %}.</td></tr>{% endfor %}</tbody></table></div>
+{% endif %}
+  {% include "console/_pagination.html" %}
+</div>
+
+{% if tab == 'payouts' and refund.count %}<div class="card mt"><div class="card-h"><h2>Credit to refund</h2><span>{{ refund.amount|money }} on finished or closed places</span></div>
+  <div class="table-wrap"><table class="t"><thead><tr><th>Member</th><th>Equb</th><th class="r">Credit</th><th></th></tr></thead><tbody>
+  {% for m in refund.rows %}<tr><td>{{ m.user.full_name }}<div class="small">{{ m.user.phone|tel }}</div></td><td>{{ m.group.name }}</td><td class="r num strong">{{ m.prepaid_credit|money }}</td><td class="r"><a class="btn ghost sm" href="{% url 'console:equb_member' m.pk %}">Open</a></td></tr>{% endfor %}
+  </tbody></table></div></div>{% endif %}
+
+
+{% if tab == 'payouts' %}
+<dialog class="modal" id="payout-dialog"><form method="post">{% csrf_token %}<input type="hidden" name="payout"><input type="hidden" name="next" value="{{ request.get_full_path }}">
+  <div class="modal-h"><h3>Pay out <span data-text="amount"></span> to <span data-text="who"></span></h3><button type="button" class="x" data-close>&times;</button></div>
+  <div class="modal-b"><p class="small muted" style="margin-top:0">For winners who take the payout as money instead of a travel booking. The voucher can no longer be redeemed afterwards.</p>
+    <div class="field"><label>Paid by</label><select name="method"><option>Cash</option><option>Bank transfer</option><option>telebirr</option></select></div>
+    <div class="field"><label>Reference</label><input type="text" name="reference" maxlength="64"></div></div>
+  <div class="modal-f"><button type="button" class="btn ghost" data-close>Cancel</button><button class="btn">Mark paid out</button></div>
+</form></dialog>
+{% endif %}
+{% endblock %}

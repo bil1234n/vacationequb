@@ -1,0 +1,22 @@
+{% extends "console/base.html" %}{% load console_tags %}
+{% block title %}Flights{% endblock %}{% block heading %}Flights &amp; seat inventory{% endblock %}{% block crumbs %}Travel{% endblock %}
+{% block actions %}<a class="btn" href="{% url 'console:flight_add' %}">+ New flight</a>{% endblock %}
+{% block content %}
+<div class="card" style="margin-bottom:16px"><div class="card-h"><h2>Revenue by destination</h2><span>Confirmed flight bookings</span></div><div class="chart-box sm"><canvas data-chart="routes"></canvas></div></div>
+<form class="toolbar" method="get">
+  <div class="chips"><a class="chip {% if when == 'upcoming' %}on{% endif %}" href="{% qs when='upcoming' page=None %}">Upcoming</a><a class="chip {% if when == 'past' %}on{% endif %}" href="{% qs when='past' page=None %}">Departed</a></div>
+  <span class="grow"></span>
+  <select name="destination" onchange="this.form.submit()"><option value="">All destinations</option>{% for iata, city in dests %}<option value="{{ iata }}" {% if iata == dest %}selected{% endif %}>{{ city }} ({{ iata }})</option>{% endfor %}</select>
+  <input type="hidden" name="when" value="{{ when }}">
+</form>
+<div class="card"><div class="table-wrap"><table class="t">
+  <thead><tr><th>Flight</th><th>Route</th><th>Departure</th><th>Aircraft</th><th>Status</th><th>Booked</th><th>Held</th><th style="width:200px">Load factor</th></tr></thead>
+  <tbody>{% for f in page %}<tr>
+    <td><a class="strong" href="{% url 'console:flight' f.pk %}">{{ f.flight_number }}</a></td>
+    <td>{{ f.origin.iata }} → {{ f.destination.iata }}<div class="small muted">{{ f.destination.city }}</div></td>
+    <td class="small">{{ f.departure_time|date:"D d M, H:i" }}</td><td class="small">{{ f.aircraft.name }}</td><td>{{ f.status|status_badge }}</td>
+    <td class="num">{{ f.booked }} / {{ f.total }}</td><td class="num">{{ f.held }}</td>
+    <td><div style="display:flex;gap:8px;align-items:center"><div class="bar" style="flex:1"><i style="width:{{ f.load }}%"></i></div><span class="small num">{{ f.load }}%</span></div></td></tr>
+  {% empty %}<tr><td colspan="8" class="empty">No flights yet. <a href="{% url 'console:flight_add' %}">Schedule your first flight →</a></td></tr>{% endfor %}</tbody>
+</table></div>{% include "console/_pagination.html" %}</div>
+{% endblock %}

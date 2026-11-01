@@ -1,0 +1,118 @@
+{% extends "console/base.html" %}{% load console_tags %}
+{% block title %}Dashboard{% endblock %}
+{% block heading %}Good {% now "H" as h %}{% if h < "12" %}morning{% elif h < "17" %}afternoon{% else %}evening{% endif %}, {{ request.user.first_name }}{% endblock %}
+{% block crumbs %}Overview · last {{ period }} days{% endblock %}
+{% block actions %}
+<div class="chips">
+  <a class="chip {% if period == 7 %}on{% endif %}" href="?days=7">7 days</a>
+  <a class="chip {% if period == 30 %}on{% endif %}" href="?days=30">30 days</a>
+  <a class="chip {% if period == 90 %}on{% endif %}" href="?days=90">90 days</a>
+</div>
+{% endblock %}
+{% block content %}
+{% if is_empty %}
+<div class="card getting-started">
+  <div><h2>Welcome to Rihla — let's set up your catalogue</h2><p class="muted">Your system is clean. Add what customers can buy and join; the dashboard fills in automatically as bookings, contributions and entries come in.</p></div>
+  <ol>
+    <li><a href="{% url 'console:settings' %}">Check airports &amp; baggage options</a></li>
+    <li><a href="{% url 'console:flight_add' %}">Schedule a flight</a> (seat map is generated for you)</li>
+    <li><a href="{% url 'console:package_add' %}">Create a Hajj, Umrah or tour package</a></li>
+    <li><a href="{% url 'console:equb_package_add' %}">Create an Equb package</a>, then <a href="{% url 'console:equb_add' %}">open a group</a> from it, and <a href="{% url 'console:campaign_add' %}">start a crowdfunding campaign</a></li>
+  </ol>
+</div>
+{% endif %}
+<div class="strip" style="margin-bottom:16px">
+  <div><div class="label">Departing in 24 h</div><div class="value">{{ attention.departures }} <small class="muted" style="font-size:13px;font-weight:600">flight{{ attention.departures|pluralize }}</small></div>
+    <div class="sub"><a href="{% url 'console:check_in' %}">{{ attention.checked_in }}/{{ attention.passengers }} checked in →</a></div></div>
+  <div><div class="label">Seats on hold</div><div class="value {% if attention.holds %}gold{% endif %}">{{ attention.holds }}</div>
+    <div class="sub"><a href="{% url 'console:bookings' %}?queue=pending">Awaiting payment →</a></div></div>
+  <div><div class="label">Refunds to process</div><div class="value {% if attention.refunds %}red{% endif %}">{{ attention.refunds }}</div>
+    <div class="sub"><a href="{% url 'console:bookings' %}?queue=refund_due">Cancelled or paid late →</a></div></div>
+  <div><div class="label">Equb members behind</div><div class="value {% if equb.members_in_arrears %}red{% endif %}">{{ equb.members_in_arrears }}</div>
+    <div class="sub"><a href="{% url 'console:equb_collections' %}">{{ equb.arrears|compact }} ETB in arrears →</a></div></div>
+  <div><div class="label">Exit &amp; termination</div><div class="value {% if attention.exits or attention.terminations %}gold{% endif %}">{{ attention.exits|add:attention.terminations }}</div>
+    <div class="sub"><a href="{% url 'console:terminations' %}">{{ attention.exits }} exit request{{ attention.exits|pluralize }} · {{ attention.terminations }} to review →</a></div></div>
+</div>
+<div class="grid g-4">
+  {% for k in kpis %}
+  <div class="card kpi {% if k.dark %}dark{% endif %}{% if k.gold %} gold{% endif %}">
+    <div class="icon">{% include "console/_icon.html" with name=k.icon %}</div>
+    <div class="label">{{ k.label }}</div>
+    <div class="value">{% if k.money %}{{ k.value|compact }} <small style="font-size:14px;font-weight:600">ETB</small>{% else %}{{ k.value }}{% endif %}</div>
+    <div class="sub">{% if k.growth is not None %}<span class="badge {% if k.growth >= 0 %}b-green{% else %}b-red{% endif %}">{% if k.growth >= 0 %}▲{% else %}▼{% endif %} {{ k.growth }}%</span> vs previous {{ period }} days{% elif k.sub %}{{ k.sub }}{% else %}&nbsp;{% endif %}</div>
+  </div>
+  {% endfor %}
+</div>
+
+<div class="grid g-21 mt">
+  <div class="card"><div class="card-h"><h2>Revenue by stream</h2><span>Successful payments per day</span></div><div class="chart-box lg"><canvas data-chart="revenue"></canvas></div></div>
+  <div class="card"><div class="card-h"><h2>Bookings by status</h2><span>All time</span></div><div class="chart-box lg"><canvas data-chart="booking_status"></canvas></div></div>
+</div>
+
+<div class="grid g-3 mt">
+  <div class="card"><div class="card-h"><h2>Top destinations</h2><span>Confirmed flight bookings</span></div><div class="chart-box"><canvas data-chart="destinations"></canvas></div></div>
+  <div class="card"><div class="card-h"><h2>Busiest upcoming flights</h2><span>% seats booked</span></div><div class="chart-box"><canvas data-chart="load"></canvas></div></div>
+  <div class="card"><div class="card-h"><h2>Payment providers</h2><span>Collected this period</span></div><div class="chart-box"><canvas data-chart="providers"></canvas></div></div>
+</div>
+
+<div class="grid g-2 mt">
+  <div class="card"><div class="card-h"><h2>New customers</h2><span>Sign-ups per day</span></div><div class="chart-box"><canvas data-chart="signups"></canvas></div></div>
+  <div class="card"><div class="card-h"><h2>Crowdfunding gifts</h2><span>Tickets issued per day</span></div><div class="chart-box"><canvas data-chart="entries"></canvas></div></div>
+</div>
+
+<div class="grid g-2 mt">
+  <div class="card">
+    <div class="card-h"><h2>Recent bookings</h2><a href="{% url 'console:bookings' %}">View all →</a></div>
+    <div class="table-wrap"><table class="t"><thead><tr><th>Ref</th><th>Customer</th><th>Trip</th><th>Status</th><th class="r">Total</th></tr></thead><tbody>
+    {% for b in recent_bookings %}<tr>
+      <td><a class="mono strong" href="{% url 'console:booking' b.reference %}">{{ b.reference }}</a></td>
+      <td>{{ b.user.full_name }}</td>
+      <td class="small">{% if b.flight %}{{ b.flight.origin.iata }} → {{ b.flight.destination.iata }}{% else %}{{ b.package.name|truncatechars:24 }}{% endif %}</td>
+      <td>{{ b.status|status_badge }}</td><td class="r num">{{ b.total_amount|money }}</td></tr>
+    {% empty %}<tr><td colspan="5" class="empty">No bookings yet.</td></tr>{% endfor %}
+    </tbody></table></div>
+  </div>
+  <div class="card">
+    <div class="card-h"><h2>Recent payments</h2><a href="{% url 'console:payments' %}">View all →</a></div>
+    <div class="table-wrap"><table class="t"><thead><tr><th>Customer</th><th>For</th><th>Provider</th><th>Status</th><th class="r">Amount</th></tr></thead><tbody>
+    {% for p in recent_payments %}<tr>
+      <td>{{ p.user.full_name }}</td><td class="small">{{ p.purpose|purpose_short }}</td><td>{{ p.get_provider_display }}</td>
+      <td>{{ p.status|status_badge }}</td><td class="r num">{{ p.amount|money }}</td></tr>
+    {% empty %}<tr><td colspan="5" class="empty">No payments yet.</td></tr>{% endfor %}
+    </tbody></table></div>
+  </div>
+</div>
+
+<div class="grid g-2 mt">
+  <div class="card">
+    <div class="card-h"><h2>Equb rounds collecting now</h2><a href="{% url 'console:equbs' %}">All pools →</a></div>
+    <div class="mini-kpis" style="margin-bottom:10px">
+      <div><b>{{ equb.collection_rate }}%</b><span>Collection rate</span></div>
+      <div><b style="{% if equb.arrears %}color:var(--red){% endif %}">{{ equb.arrears|compact }}</b><span><a href="{% url 'console:equb_collections' %}">Arrears (ETB) →</a></span></div>
+      <div><b>{{ equb.members_in_arrears }}</b><span><a href="{% url 'console:call_center' %}">Members to call →</a></span></div>
+    </div>
+    {% for r in collecting_rounds %}
+      <div style="padding:8px 0;border-bottom:1px solid var(--line)">
+        <div style="display:flex;justify-content:space-between"><a class="strong" href="{% url 'console:equb' r.group.slug %}">{{ r.group.name }}</a><span class="small muted">Round {{ r.number }} · draw {{ r.draw_date|date:"d M" }}</span></div>
+        <div style="display:flex;gap:10px;align-items:center;margin-top:6px"><div class="bar" style="flex:1"><i style="width:{% widthratio r.collected_amount r.expected_amount 100 %}%"></i></div><span class="small num">{{ r.collected_amount|compact }} / {{ r.expected_amount|compact }}</span></div>
+      </div>
+    {% empty %}<div class="empty">No Equb is collecting right now.</div>{% endfor %}
+  </div>
+  <div class="card">
+    <div class="card-h"><h2>Community Finance &amp; Impact</h2><a href="{% url 'console:community' %}">Open →</a></div>
+    {% for c in live_campaigns %}
+      <div style="padding:9px 0;border-bottom:1px solid var(--line)">
+        <div style="display:flex;justify-content:space-between;gap:8px"><a class="strong" href="{% url 'console:campaign' c.slug %}">{{ c.title }}</a><span class="small num strong">{{ c.raised_amount|compact }} / {{ c.goal_amount|compact }}</span></div>
+        <div class="bar" style="margin-top:6px"><i style="width:{{ c.progress_percent|floatformat:0 }}%"></i></div>
+      </div>
+    {% endfor %}
+    {% for g in live_giveaways %}
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--line)">
+        <div><a class="strong" href="{% url 'console:giveaway' g.slug %}">{{ g.title }}</a><div class="small muted">🎁 {{ g.prize_title }} · by {{ g.sponsor_name }}</div></div>
+        <div style="text-align:right"><div class="strong num">{{ g.entries_issued }} free entries</div><div class="small muted">{{ g.referrals_count }} referrals</div></div>
+      </div>
+    {% endfor %}
+    {% if not live_campaigns and not live_giveaways %}<div class="empty">No live campaigns or giveaways.</div>{% endif %}
+  </div>
+</div>
+{% endblock %}

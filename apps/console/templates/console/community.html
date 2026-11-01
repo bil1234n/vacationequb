@@ -1,0 +1,69 @@
+{% extends "console/base.html" %}{% load console_tags %}
+{% block title %}Community Finance &amp; Impact{% endblock %}{% block heading %}Community Finance &amp; Impact{% endblock %}{% block crumbs %}{% if tab == 'giveaways' %}Community Giveaways{% else %}Crowdfunding Campaigns{% endif %}{% endblock %}
+{% block actions %}{% if tab == 'giveaways' %}<a class="btn" href="{% url 'console:giveaway_add' %}">+ New Community Giveaway</a>{% else %}<a class="btn" href="{% url 'console:campaign_add' %}">+ New Crowdfunding Campaign</a>{% endif %}{% endblock %}
+{% block content %}
+<div class="cf-tabs">
+  <a class="cf-tab {% if tab != 'giveaways' %}on{% endif %}" href="{% url 'console:community' %}">
+    <span class="cf-tab-ico">🤲</span><span><b>Crowdfunding Campaigns</b><small>Sadaqah &amp; Hibah for Umrah, Hajj and travel</small></span></a>
+  <a class="cf-tab {% if tab == 'giveaways' %}on{% endif %}" href="{% url 'console:giveaways' %}">
+    <span class="cf-tab-ico">🎁</span><span><b>Community Giveaways</b><small>Sponsored trips · free entry by referrals</small></span></a>
+</div>
+
+{% if tab == 'giveaways' %}
+<div class="note-box" style="margin-bottom:18px">Giveaways are paid for entirely by Rihla's marketing budget or a sponsor. Nobody pays to enter – every <b>{{ settings_refs|default:"10" }} friends</b> someone invites who register on Rihla earn them <b>one free entry</b>. Donations are never used for giveaways.</div>
+<div class="grid g-4">
+  <div class="card kpi dark"><div class="label">Live giveaways</div><div class="value">{{ kpi.live }}</div><div class="sub">{{ kpi.winners }} winner{{ kpi.winners|pluralize }} so far</div></div>
+  <div class="card kpi"><div class="label">Free entries earned</div><div class="value">{{ kpi.entries }}</div><div class="sub">from {{ kpi.referrals }} referral{{ kpi.referrals|pluralize }}</div></div>
+  <div class="card kpi"><div class="label">Inviters</div><div class="value">{{ kpi.participants }}</div><div class="sub">people bringing friends</div></div>
+  <div class="card kpi gold"><div class="label">Sponsored prizes</div><div class="value">{{ kpi.sponsored|compact }} <small style="font-size:14px">ETB</small></div><div class="sub">paid by Rihla &amp; sponsors</div></div>
+</div>
+<div class="card mt"><div class="card-h"><h2>Free entries earned per day</h2><span class="muted small">Last 30 days</span></div><div class="chart-box sm"><canvas data-chart="daily"></canvas></div></div>
+<div class="card mt">
+  <div class="card-h"><h2>All giveaways</h2>
+    <div class="chips"><a class="chip {% if not status %}on{% endif %}" href="?">All</a>{% for k, l in statuses %}<a class="chip {% if status == k %}on{% endif %}" href="?status={{ k }}">{{ l|cut:" – collecting referrals"|cut:" – awaiting draw" }}</a>{% endfor %}</div></div>
+  <div class="table-wrap"><table class="t">
+    <thead><tr><th>Giveaway</th><th>Sponsor</th><th>Prize</th><th class="r">Referrals</th><th class="r">Free entries</th><th>Draw</th><th>Status</th></tr></thead>
+    <tbody>{% for g in gives %}<tr>
+      <td><a class="strong" href="{% url 'console:giveaway' g.slug %}">{{ g.title }}</a><div class="small muted">{{ g.referrals_per_entry }} friends = 1 entry{% if g.is_featured %} · ★ featured{% endif %}</div></td>
+      <td>{{ g.sponsor_name }}<div class="small muted">{{ g.get_sponsor_type_display }}</div></td>
+      <td>{{ g.prize_title }}<div class="small muted">{{ g.number_of_winners }} × {{ g.prize_value|money }}</div></td>
+      <td class="r num">{{ g.referrals_count }}</td>
+      <td class="r num strong">{{ g.entries_issued }}<div class="small muted">{{ g.participants_count }} inviter{{ g.participants_count|pluralize }}</div></td>
+      <td class="nowrap">{{ g.draw_at|date:"d M Y" }}<div class="small muted">ends {{ g.ends_at|date:"d M, H:i" }}</div></td>
+      <td>{{ g.status|status_badge }}</td></tr>
+    {% empty %}<tr><td colspan="7" class="empty">No giveaways yet. <a href="{% url 'console:giveaway_add' %}">Create the first one →</a></td></tr>{% endfor %}</tbody>
+  </table></div>
+</div>
+
+{% else %}
+<div class="note-box" style="margin-bottom:18px">Every gift goes <b>100% to the cause</b>. Rihla's platform fee is a separate amount the donor sees and pays on top at checkout (e.g. 100 ETB gift + 5 ETB fee = 105 ETB). Giving never earns tickets or prizes.</div>
+<div class="grid g-4">
+  <div class="card kpi dark"><div class="label">Raised for causes</div><div class="value">{{ kpi.raised|compact }} <small style="font-size:14px">ETB</small></div><div class="sub">{{ kpi.gifts }} gift{{ kpi.gifts|pluralize }} from {{ kpi.donors }} donor{{ kpi.donors|pluralize }}</div></div>
+  <div class="card kpi"><div class="label">Paid out</div><div class="value">{{ kpi.disbursed|compact }} <small style="font-size:14px">ETB</small></div><div class="sub">{{ kpi.to_pay|money }} still to pay out</div></div>
+  <div class="card kpi"><div class="label">Live campaigns</div><div class="value">{{ kpi.live }}</div><div class="sub">{{ kpi.funded }} reached their goal</div></div>
+  <div class="card kpi gold"><div class="label">Platform fees</div><div class="value">{{ kpi.fees|compact }} <small style="font-size:14px">ETB</small></div><div class="sub">added on top, separate from gifts</div></div>
+</div>
+<div class="grid g-21 mt">
+  <div class="card"><div class="card-h"><h2>Given per day</h2><span class="muted small">Last 30 days</span></div><div class="chart-box sm"><canvas data-chart="daily"></canvas></div></div>
+  <div class="card"><div class="card-h"><h2>Sadaqah &amp; Hibah</h2></div><div class="chart-box sm"><canvas data-chart="kinds"></canvas></div></div>
+</div>
+<div class="card mt">
+  <div class="card-h"><h2>All campaigns</h2>
+    <div class="chips"><a class="chip {% if not status %}on{% endif %}" href="?">All</a>{% for k, l in statuses %}<a class="chip {% if status == k %}on{% endif %}" href="?status={{ k }}">{{ l|cut:" – accepting donations" }}</a>{% endfor %}</div></div>
+  <form class="toolbar" method="get">{% if status %}<input type="hidden" name="status" value="{{ status }}">{% endif %}
+    <input class="grow" type="search" name="q" value="{{ q }}" placeholder="Search a campaign or beneficiary…"><button class="btn" type="submit">Search</button></form>
+  <div class="table-wrap"><table class="t">
+    <thead><tr><th>Campaign</th><th>Beneficiary</th><th style="min-width:200px">Progress</th><th class="r">Raised</th><th class="r">Paid out</th><th class="r">Donors</th><th>Status</th></tr></thead>
+    <tbody>{% for c in camps %}<tr>
+      <td><a class="strong" href="{% url 'console:campaign' c.slug %}">{{ c.title }}</a><div class="small muted">{{ c.get_category_display }}{% if c.is_featured %} · ★ featured{% endif %}</div></td>
+      <td>{{ c.beneficiary_name }}{% if c.beneficiary %}<div class="small"><a href="{% url 'console:user' c.beneficiary_id %}">{{ c.beneficiary.phone|tel }}</a></div>{% endif %}</td>
+      <td><div style="display:flex;gap:8px;align-items:center"><div class="bar" style="flex:1"><i style="width:{{ c.progress_percent|floatformat:0 }}%"></i></div><span class="small num">{{ c.progress_percent|floatformat:0 }}%</span></div><div class="small muted">goal {{ c.goal_amount|money }}</div></td>
+      <td class="r num strong">{{ c.raised_amount|money }}</td>
+      <td class="r num">{{ c.disbursed_amount|money }}</td>
+      <td class="r num">{{ c.donors_count }}</td>
+      <td>{{ c.status|status_badge }}</td></tr>
+    {% empty %}<tr><td colspan="7" class="empty">{% if q or status %}No campaigns match.{% else %}No crowdfunding campaigns yet. <a href="{% url 'console:campaign_add' %}">Start the first one →</a>{% endif %}</td></tr>{% endfor %}</tbody>
+  </table></div>
+</div>
+{% endif %}
+{% endblock %}

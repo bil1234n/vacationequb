@@ -1,0 +1,56 @@
+{% extends "console/base.html" %}{% load console_tags %}
+{% block title %}Create Equb membership{% endblock %}{% block heading %}Create Equb membership{% endblock %}{% block crumbs %}<a href="{% url 'console:equb_memberships' %}">Equb memberships</a>{% endblock %}
+{% block content %}
+<form method="post" class="mem-form" novalidate data-equbs="{{ form.equb_data }}">{% csrf_token %}
+  {% if form.non_field_errors %}<div class="msg error">{{ form.non_field_errors|join:" " }}</div>{% endif %}
+  <div class="ge-layout">
+    <div class="ge-main">
+      <section class="card ge-card">
+        <div class="ge-step"><span>1</span><div><h2>Equb group</h2><p class="muted">Open Equbs and running Equbs with free places. Someone who joins a running Equb pays from the current round.</p></div></div>
+        <div class="field {% if form.group.errors %}has-error{% endif %}">
+          <label for="{{ form.group.id_for_label }}">Equb group <span class="req">*</span></label>{{ form.group }}{{ form.group.errors }}
+        </div>
+        <div class="ge-equb-info" data-equb-info hidden></div>
+      </section>
+
+      <section class="card ge-card">
+        <div class="ge-step"><span>2</span><div><h2>Customers</h2><p class="muted">Search by name or phone number and click to add. You can add several customers at once – each gets the next free position and a welcome notification.</p></div></div>
+        <div class="field {% if form.customers.errors %}has-error{% endif %}">
+          <label>Find customers</label>{{ form.customers }}{{ form.customers.errors }}
+        </div>
+        <div class="mem-new">
+          <div class="mem-new-h"><b>Not on Rihla yet?</b><span class="small muted">Register the customer here and add them in one step. If the phone is already registered, that customer is used.</span></div>
+          <div class="form-grid" style="padding:0">
+            <div class="field {% if form.new_name.errors %}has-error{% endif %}"><label>{{ form.new_name.label }}</label>{{ form.new_name }}{{ form.new_name.errors }}</div>
+            <div class="field {% if form.new_phone.errors %}has-error{% endif %}"><label>{{ form.new_phone.label }}</label>{{ form.new_phone }}{{ form.new_phone.errors }}</div>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <aside class="ge-side">
+      <div class="card ge-summary">
+        <div class="small strong muted" style="text-transform:uppercase;letter-spacing:.06em">Summary</div>
+        <h3 data-sum="equb">Choose an Equb group</h3>
+        <dl class="kv ge-kv">
+          <dt>Status</dt><dd data-sum="status">—</dd>
+          <dt>Each person, per round</dt><dd data-sum="amount">—</dd>
+          <dt>How often</dt><dd data-sum="every">—</dd>
+          <dt>Joined</dt><dd data-sum="joined">—</dd>
+          <dt>Free places</dt><dd data-sum="free">—</dd>
+          <dt class="strong">Adding now</dt><dd class="strong" data-sum="adding">0</dd>
+          <dt>Free places after</dt><dd data-sum="after">—</dd>
+        </dl>
+        <div class="mem-picked" data-sum="list"></div>
+        <div class="note-box red" data-sum="warn" hidden></div>
+      </div>
+    </aside>
+  </div>
+  <div class="form-actions">
+    <span class="grow"></span>
+    <a class="btn ghost" href="{% url 'console:equb_memberships' %}">Cancel</a>
+    <button class="btn ghost" type="submit" name="_another" value="1">Add &amp; add more</button>
+    <button class="btn" type="submit">Add to Equb</button>
+  </div>
+</form>
+{% endblock %}

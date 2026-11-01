@@ -1,0 +1,43 @@
+{% extends "console/base.html" %}{% load console_tags %}
+{% block title %}Equb reports{% endblock %}{% block heading %}Equb reports{% endblock %}{% block crumbs %}Equb · {{ label }}{% endblock %}
+{% block actions %}<a class="btn ghost" href="{% qs export='csv' %}">Export CSV</a>{% endblock %}
+{% block content %}
+<form class="toolbar" method="get">
+  <div class="chips">{% for k, l in periods %}{% if k != 'custom' %}<a class="chip {% if period == k %}on{% endif %}" href="?period={{ k }}{% if pool %}&pool={{ pool }}{% endif %}">{{ l }}</a>{% endif %}{% endfor %}</div>
+  <span class="grow"></span>
+  <input type="hidden" name="period" value="custom">
+  <input type="date" name="from" value="{{ from }}" aria-label="From"><input type="date" name="to" value="{{ to }}" aria-label="To">
+  <select name="pool"><option value="">All pools</option>{% for p in pool_choices %}<option value="{{ p.id }}" {% if pool == p.id|stringformat:"s" %}selected{% endif %}>{{ p.name }}</option>{% endfor %}</select>
+  <button class="btn" type="submit">Apply</button>
+</form>
+
+<div class="grid g-4">
+  <div class="card kpi dark"><div class="label">Collected</div><div class="value">{{ d.total|compact }} <small style="font-size:14px">ETB</small></div><div class="sub">{{ d.count }} payment{{ d.count|pluralize }} from {{ d.payers }} member{{ d.payers|pluralize }}</div></div>
+  <div class="card kpi"><div class="label">Online / office</div><div class="value">{{ d.online|compact }} <small style="font-size:14px">/ {{ d.office|compact }}</small></div><div class="sub">app gateways vs cash &amp; bank at the office</div></div>
+  <div class="card kpi gold"><div class="label">Equb revenue</div><div class="value">{{ d.revenue|compact }} <small style="font-size:14px">ETB</small></div><div class="sub">{{ d.service_fees|money }} service fees + {{ d.late_fees|money }} late fees</div></div>
+  <div class="card kpi"><div class="label">Payouts</div><div class="value">{{ d.payouts_count }}</div><div class="sub">{{ d.payouts_total|money }} to winners</div></div>
+</div>
+
+<div class="grid g-21 mt">
+  <div class="card"><div class="card-h"><h2>Collections</h2><span>{% if d.series.monthly %}per month{% else %}per day{% endif %} · {{ label }}</span></div><div class="chart-box lg"><canvas data-chart="trend"></canvas></div></div>
+  <div class="card"><div class="card-h"><h2>By payment method</h2></div><div class="chart-box lg"><canvas data-chart="methods"></canvas></div></div>
+</div>
+<div class="grid g-2 mt">
+  <div class="card"><div class="card-h"><h2>By pool</h2></div><div class="chart-box"><canvas data-chart="pools"></canvas></div></div>
+  <div class="card"><div class="card-h"><h2>Position today</h2><a href="{% url 'console:equb_collections' %}">Collections →</a></div>
+    <dl class="kv"><dt>Collection rate</dt><dd>{{ summary.collection_rate }}% of {{ summary.expected|money }} due so far</dd>
+      <dt>Arrears</dt><dd>{{ summary.arrears|money }} · {{ summary.members_in_arrears }} place{{ summary.members_in_arrears|pluralize }}</dd>
+      <dt>Never paid</dt><dd>{{ summary.never_paid_count }} · {{ summary.never_paid_amount|money }}</dd>
+      <dt>Credit held</dt><dd>{{ summary.credit|money }}</dd><dt>Unused payouts</dt><dd>{{ liability.issued_amount|money }} ({{ liability.issued_count }})</dd>
+      <dt>Average payment</dt><dd>{{ d.average|money }}</dd></dl></div>
+</div>
+
+<div class="card mt">
+  <div class="card-h"><h2>Payments</h2><span>Latest {{ d.transactions|length }} in this period</span></div>
+  <div class="table-wrap"><table class="t"><thead><tr><th>Date</th><th>Member</th><th>Pool</th><th>Method</th><th>Reference</th><th class="r">Amount</th></tr></thead><tbody>
+  {% for t in d.transactions %}<tr><td class="small">{{ t.completed_at|date:"d M Y, H:i" }}</td><td><a href="{% url 'console:user' t.user_id %}">{{ t.user.full_name }}</a></td>
+    <td class="small">{{ d.txn_groups|get_item:t.id|default:"—" }}</td><td>{% if t.is_office %}<span class="badge b-gold">{{ t.get_provider_display }}</span>{% else %}{{ t.get_provider_display }}{% endif %}</td>
+    <td class="mono small">{{ t.provider_reference|default:"—"|truncatechars:20 }}</td><td class="r num strong">{{ t.amount|money }}</td></tr>
+  {% empty %}<tr><td colspan="6" class="empty">No Equb payments in this period.</td></tr>{% endfor %}</tbody></table></div>
+</div>
+{% endblock %}

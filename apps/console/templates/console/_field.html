@@ -1,0 +1,12 @@
+{% load console_tags %}{% if bf|is_checkbox %}
+<label class="switch-row {% if bf.field.disabled %}disabled{% endif %}">
+  {{ bf }}<span class="switch"></span>
+  <span><span class="strong">{{ bf.label }}</span>{% if bf.help_text %}<span class="helptext">{{ bf.help_text }}</span>{% endif %}</span>
+</label>{{ bf.errors }}
+{% else %}
+<div class="field {% if bf|is_wide %}wide{% endif %} {% if bf.errors %}has-error{% endif %}">
+  <label for="{{ bf.id_for_label }}">{{ bf.label }}{% if bf.field.required and not bf.field.disabled %} <span class="req">*</span>{% endif %}</label>
+  {{ bf }}
+  {% if bf.help_text %}<span class="helptext">{{ bf.help_text }}</span>{% endif %}
+  {{ bf.errors }}
+</div>{% endif %}

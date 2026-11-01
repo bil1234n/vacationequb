@@ -1,0 +1,79 @@
+{% load static console_tags %}<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Console{% endblock %} · Rihla Travel</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{% static 'console/console.css' %}">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%230F382B'/><path d='M16 6l2 9 8 4v2l-8-2-1 5 3 2v1l-4-1-4 1v-1l3-2-1-5-8 2v-2l8-4z' fill='white'/></svg>">
+</head>
+<body>
+<div class="shell">
+  <aside class="sidebar">
+    <div class="brand"><div class="brand-mark">R</div><div><b>Rihla Travel</b><small>Staff console</small></div></div>
+    <nav class="nav">
+      <div class="nav-label">Overview</div>
+      <a href="{% url 'console:dashboard' %}" class="{% if nav == 'dashboard' %}active{% endif %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>Dashboard</a>
+      <div class="nav-label">Travel</div>
+      <a href="{% url 'console:bookings' %}" class="{% if nav == 'bookings' %}active{% endif %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9a2 2 0 0 0 0 6v3h18v-3a2 2 0 0 1 0-6V6H3z"/><path d="M13 6v3m0 3v.01M13 15v3"/></svg>Bookings</a>
+      <a href="{% url 'console:flights' %}" class="{% if nav == 'flights' %}active{% endif %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.8 19.2L16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/></svg>Flights &amp; seats</a>
+      <a href="{% url 'console:check_in' %}" class="{% if nav == 'check_in' %}active{% endif %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/><path d="M7 8h2v8H7zM12 8h1v8h-1zM16 8h1v8h-1z"/></svg>Check-in desk</a>
+      <a href="{% url 'console:packages' %}" class="{% if nav == 'packages' %}active{% endif %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z"/></svg>Hajj, Umrah &amp; tours</a>
+      <div class="nav-label">Equb</div>{% equb_counts as ec %}
+      <a href="{% url 'console:equb_packages' %}" class="{% if nav == 'equb_packages' %}active{% endif %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M8 4v5"/></svg>Equb packages</a>
+      <a href="{% url 'console:equbs' %}" class="{% if nav == 'equb' %}active{% endif %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="8" r="4"/><path d="M2 21a7 7 0 0 1 14 0"/><path d="M16 4a4 4 0 0 1 0 8m6 9a7 7 0 0 0-4-6.3"/></svg>Equb groups</a>
+      <a href="{% url 'console:equb_memberships' %}" class="{% if nav == 'equb_memberships' %}active{% endif %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="8" r="4"/><path d="M2 21a7 7 0 0 1 14 0M19 8v6M16 11h6"/></svg>Equb memberships</a>
+      <a href="{% url 'console:group_equbs' %}" class="{% if nav == 'group_equbs' %}active{% endif %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="7" r="3"/><circle cx="5" cy="10" r="2.5"/><circle cx="19" cy="10" r="2.5"/><path d="M6.5 21a5.5 5.5 0 0 1 11 0M1 19a4 4 0 0 1 5-3.8M23 19a4 4 0 0 0-5-3.8"/></svg>Group Equbs</a>
+      <a href="{% url 'console:equb_draws' %}" class="{% if nav == 'equb_draws' %}active{% endif %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 8a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v2a2 2 0 0 0 0 4v2a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-2a2 2 0 0 0 0-4z"/><path d="M15 6v12" stroke-dasharray="2 2"/></svg>Equb draws{% if ec.draws_due %}<span class="nav-count">{{ ec.draws_due }}</span>{% endif %}</a>
+      <a href="{% url 'console:equb_collections' %}" class="{% if nav == 'collections' %}active{% endif %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>Collections</a>
+      <a href="{% url 'console:call_center' %}" class="{% if nav == 'call_center' %}active{% endif %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z"/></svg>Call centre{% if ec.uncalled %}<span class="nav-count">{{ ec.uncalled }}</span>{% endif %}</a>
+      <a href="{% url 'console:terminations' %}" class="{% if nav == 'terminations' %}active{% endif %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="8" r="4"/><path d="M2 21a7 7 0 0 1 14 0M17 8l5 5m0-5l-5 5"/></svg>Terminations{% if ec.terminations %}<span class="nav-count">{{ ec.terminations }}</span>{% endif %}</a>
+      <div class="nav-label">Community Finance &amp; Impact</div>
+      <a href="{% url 'console:community' %}" class="{% if nav == 'community' %}active{% endif %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 14h2a2 2 0 1 0 0-4h-3c-.6 0-1.1.2-1.4.6L3 16"/><path d="M7 20l1.6-1.4c.3-.4.8-.6 1.4-.6h4c1.1 0 2.1-.4 2.8-1.2l4.6-4.4a2 2 0 0 0-2.8-2.9l-4.2 3.9"/><path d="M2 15l6 6"/><path d="M19.5 8.5c.7-.7 1.5-1.6 1.5-2.7A2.7 2.7 0 0 0 16 4a2.8 2.8 0 0 0-5 1.8c0 1.2.8 2 1.5 2.8L16 12z"/></svg>Crowdfunding</a>
+      <a href="{% url 'console:giveaways' %}" class="{% if nav == 'giveaways' %}active{% endif %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="8" width="18" height="4" rx="1"/><path d="M12 8v13M19 12v7a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-7M7.5 8a2.5 2.5 0 0 1 0-5C10 3 12 8 12 8s2-5 4.5-5a2.5 2.5 0 0 1 0 5"/></svg>Giveaways</a>
+      <a href="{% url 'console:payments' %}" class="{% if nav == 'payments' %}active{% endif %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20M6 15h4"/></svg>Payments</a>
+      <div class="nav-label">People</div>
+      <a href="{% url 'console:users' %}" class="{% if nav == 'users' %}active{% endif %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>Customers</a>
+      <a href="{% url 'console:settings' %}" class="{% if nav == 'settings' %}active{% endif %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></svg>Settings</a>
+      <a href="{% url 'console:profile' %}" class="{% if nav == 'profile' %}active{% endif %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>My profile</a>
+    </nav>
+    <div class="sidebar-foot">
+      <a href="/api/docs/" style="color:rgba(255,255,255,.75)">API docs</a> · <a href="/admin/" style="color:rgba(255,255,255,.75)">Data admin</a>
+    </div>
+  </aside>
+  <main class="main">
+    <div class="topbar">
+      <div>
+        <div class="crumbs">{% block crumbs %}Rihla console{% endblock %}</div>
+        <h1>{% block heading %}{% endblock %}</h1>
+      </div>
+      <div style="display:flex;gap:12px;align-items:center">
+        {% block actions %}{% endblock %}
+        <div class="user-menu">
+          <button class="user-btn" type="button" aria-haspopup="true">
+            <span class="avatar">{{ request.user.full_name|initials }}</span>
+            <span class="strong">{{ request.user.first_name }}</span>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+          </button>
+          <div class="dropdown">
+            <div class="small muted" style="padding:8px 12px">{{ request.user.full_name }}<br>{{ request.user.phone }}</div>
+            <a href="{% url 'console:profile' %}">My profile</a>
+            <a href="/admin/">Data admin</a>
+            <form method="post" action="{% url 'console:logout' %}">{% csrf_token %}<button class="danger" type="submit">Log out</button></form>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="content">
+      {% for m in messages %}<div class="msg {{ m.tags }}">{{ m }}</div>{% endfor %}
+      {% block content %}{% endblock %}
+    </div>
+  </main>
+</div>
+{% if charts %}{{ charts|json_script:"chart-config" }}{% endif %}
+<script src="{% static 'console/chart.umd.js' %}"></script>
+<script src="{% static 'console/console.js' %}"></script>
+</body>
+</html>

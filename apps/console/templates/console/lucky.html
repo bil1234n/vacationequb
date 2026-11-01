@@ -1,0 +1,25 @@
+{% extends "console/base.html" %}{% load console_tags %}
+{% block title %}Lucky draws{% endblock %}{% block heading %}Lucky draws &amp; micro-donations{% endblock %}{% block crumbs %}Community finance{% endblock %}
+{% block actions %}<a class="btn" href="{% url 'console:campaign_add' %}">+ New lucky draw</a>{% endblock %}
+{% block content %}
+<div class="grid g-4">
+  <div class="card kpi dark"><div class="label">Total raised</div><div class="value">{{ totals.raised|compact }} <small style="font-size:14px">ETB</small></div><div class="sub">{{ totals.donations }} paid micro-donations</div></div>
+  <div class="card kpi"><div class="label">Entries issued</div><div class="value">{{ totals.entries }}</div><div class="sub">{{ totals.referral }} from referrals</div></div>
+  <div class="card kpi"><div class="label">Players</div><div class="value">{{ totals.players }}</div><div class="sub">unique participants</div></div>
+  <div class="card kpi"><div class="label">Campaigns</div><div class="value">{{ camps|length }}</div><div class="sub">all time</div></div>
+</div>
+<div class="grid g-2 mt">
+  <div class="card"><div class="card-h"><h2>Raised per day</h2><span>Last 30 days</span></div><div class="chart-box"><canvas data-chart="daily"></canvas></div></div>
+  <div class="card"><div class="card-h"><h2>Donation size distribution</h2><span>1–100 Birr</span></div><div class="chart-box"><canvas data-chart="dist"></canvas></div></div>
+</div>
+<div class="card mt"><div class="table-wrap"><table class="t">
+  <thead><tr><th>Campaign</th><th>Prize</th><th>Window</th><th>Entries</th><th>People</th><th class="r">Raised</th><th>Status</th></tr></thead>
+  <tbody>{% for c in camps %}<tr>
+    <td><a class="strong" href="{% url 'console:lucky_detail' c.slug %}">{{ c.title }}</a></td>
+    <td class="small">{{ c.prize_title }}{% if c.number_of_winners > 1 %} ×{{ c.number_of_winners }}{% endif %}</td>
+    <td class="small">{{ c.starts_at|date:"d M" }} – {{ c.ends_at|date:"d M Y" }}</td>
+    <td class="num">{{ c.entries_issued }}</td><td class="num">{{ c.participants_count }}</td>
+    <td class="r num strong">{{ c.total_raised|money }}</td><td>{{ c.status|status_badge }}</td></tr>
+  {% empty %}<tr><td colspan="7" class="empty">No campaigns yet. <a href="{% url 'console:campaign_add' %}">Launch one →</a></td></tr>{% endfor %}</tbody>
+</table></div></div>
+{% endblock %}

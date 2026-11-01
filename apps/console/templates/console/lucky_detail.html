@@ -1,0 +1,44 @@
+{% extends "console/base.html" %}{% load console_tags %}
+{% block title %}{{ c.title }}{% endblock %}{% block heading %}{{ c.title }}{% endblock %}
+{% block crumbs %}<a href="{% url 'console:lucky' %}">Lucky draws</a> / {{ c.title }}{% endblock %}
+{% block actions %}
+  {% if c.status == 'LIVE' or c.status == 'CLOSED' %}<form method="post" data-confirm="Close entries and draw {{ c.number_of_winners }} winner(s) now? This cannot be undone.">{% csrf_token %}<input type="hidden" name="action" value="draw"><button class="btn gold">Close &amp; draw winners</button></form>{% endif %}
+  <a class="btn ghost" href="{% url 'console:campaign_edit' c.slug %}">Edit</a>
+{% endblock %}
+{% block content %}
+<div class="hero">
+  <div><div class="muted small">{{ c.get_prize_type_display }} · {{ c.starts_at|date:"d M" }} – {{ c.ends_at|date:"d M Y, H:i" }}</div><h2>🏆 {{ c.prize_title }}</h2>
+    <div class="muted">{{ c.number_of_winners }} winner{{ c.number_of_winners|pluralize }} · {{ c.prize_value|money }} each · {{ c.min_amount }}–{{ c.max_amount }} Birr per entry ({{ c.birr_per_entry }} Birr = 1 ticket)</div></div>
+  <div class="stats"><div><b>{{ c.status|status_badge }}</b><span>Status</span></div><div><b>{{ c.entries_issued }}</b><span>Entries</span></div><div><b>{{ c.participants_count }}</b><span>People</span></div><div><b>{{ c.total_raised|compact }}</b><span>Raised (ETB)</span></div><div><b>{{ avg|floatformat:1 }}</b><span>Avg donation</span></div></div>
+</div>
+<div class="grid g-21 mt">
+  <div class="card"><div class="card-h"><h2>Entries per day</h2></div><div class="chart-box"><canvas data-chart="daily"></canvas></div></div>
+  <div class="card"><div class="card-h"><h2>Entry sources</h2></div><div class="chart-box"><canvas data-chart="sources"></canvas></div></div>
+</div>
+<div class="grid g-3 mt">
+  <div class="card">
+    <div class="card-h"><h2>Leaderboard</h2><span>Top supporters</span></div>
+    {% for r in board.top_supporters %}<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--line)"><span class="tl-dot" style="width:26px;height:26px;background:{% if r.rank <= 3 %}var(--gold){% else %}#C9D6D0{% endif %};color:var(--green)">{{ r.rank }}</span><span style="flex:1">{{ r.name }}</span><span class="strong num">{{ r.entries }}</span></div>
+    {% empty %}<div class="empty">No entries yet.</div>{% endfor %}
+  </div>
+  <div class="card">
+    <div class="card-h"><h2>Winners</h2></div>
+    {% for w in winners %}<div style="padding:8px 0;border-bottom:1px solid var(--line)"><div style="display:flex;justify-content:space-between"><span class="strong">{{ w.rank }}. <a href="{% url 'console:user' w.user_id %}">{{ w.user.full_name }}</a></span><span class="mono small">#{{ w.ticket_number }}</span></div>
+      <div class="small muted">Voucher <span class="mono">{{ w.voucher_code }}</span> · {% if w.claimed_at %}claimed {{ w.claimed_at|date:"d M" }}{% if w.claimed_booking %} on {{ w.claimed_booking.reference }}{% endif %}{% else %}not claimed{% endif %}</div></div>
+    {% empty %}<div class="empty">Winners appear after the draw.</div>{% endfor %}
+  </div>
+  <div class="card">
+    <div class="card-h"><h2>Fairness</h2></div>
+    <div class="small muted">Seed commitment (published before entries closed)</div><div class="hash" style="margin:6px 0 12px">{{ c.seed_commitment }}</div>
+    {% if verification.drawn %}
+      <div class="small muted">Revealed seed</div><div class="hash" style="margin:6px 0 12px">{{ verification.server_seed }}</div>
+      <div class="strong" style="color:{% if verification.matches %}var(--green){% else %}var(--red){% endif %}">{% if verification.matches %}✓ Verified: winning tickets recompute exactly{% else %}✗ Verification mismatch{% endif %}</div>
+      <div class="small muted" style="margin-top:4px">Tickets {{ verification.recorded_tickets|join:", " }}</div>
+    {% else %}<p class="muted small">The seed is revealed after the draw so anyone can verify the result.</p>{% endif %}
+  </div>
+</div>
+<div class="card mt"><div class="card-h"><h2>Latest micro-donations</h2></div>
+  <div class="table-wrap"><table class="t"><thead><tr><th>Supporter</th><th>Paid</th><th>Entries</th><th class="r">Amount</th></tr></thead><tbody>
+  {% for d in recent %}<tr><td>{% if d.is_anonymous %}<span class="muted">Anonymous</span> · {% endif %}<a href="{% url 'console:user' d.user_id %}">{{ d.user.full_name }}</a></td><td class="small">{{ d.paid_at|date:"d M, H:i" }}</td><td class="num">{{ d.entries_awarded }}</td><td class="r num">{{ d.amount|money }}</td></tr>
+  {% empty %}<tr><td colspan="4" class="empty">No donations yet.</td></tr>{% endfor %}</tbody></table></div></div>
+{% endblock %}

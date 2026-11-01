@@ -1,0 +1,131 @@
+{% extends "console/base.html" %}{% load console_tags %}
+{% block title %}Booking {{ b.reference }}{% endblock %}{% block heading %}Booking {{ b.reference }}{% endblock %}
+{% block crumbs %}<a href="{% url 'console:bookings' %}">Bookings</a> / {{ b.reference }}{% endblock %}
+{% block actions %}
+  {% if b.is_payable %}<button class="btn" data-open="pay-dialog">Record payment</button>{% endif %}
+  {% if b.status == 'CONFIRMED' %}<a class="btn ghost" href="/api/travel/bookings/{{ b.reference }}/itinerary/">PDF itinerary</a>
+    <form method="post">{% csrf_token %}<input type="hidden" name="action" value="resend"><button class="btn ghost" type="submit">Resend to app</button></form>{% endif %}
+  {% if b.status == 'PENDING_PAYMENT' or b.status == 'CONFIRMED' %}<button class="btn danger" data-open="cancel-dialog">Cancel booking</button>{% endif %}
+  {% if refundable and b.status != 'PENDING_PAYMENT' %}<button class="btn ghost" data-open="refund-dialog">Record refund</button>{% endif %}
+{% endblock %}
+{% block content %}
+<div class="hero">
+  <div>
+    <div class="muted small">{{ b.get_booking_type_display }} · booked {{ b.created_at|date:"d M Y, H:i" }} by <a href="{% url 'console:user' b.user_id %}" style="color:#fff;text-decoration:underline">{{ b.user.full_name }}</a></div>
+    {% if b.flight %}<h2>{{ b.flight.origin.city }} → {{ b.flight.destination.city }}</h2>
+      <div class="muted"><a href="{% url 'console:flight' b.flight_id %}" style="color:#fff">{{ b.flight.airline_name }} {{ b.flight.flight_number }}</a> · {{ b.flight.departure_time|date:"D d M Y, H:i" }} · {{ b.fare_class.name }} ({{ b.fare_class.code }}){% if b.flight.status != 'SCHEDULED' %} · {{ b.flight.get_status_display }}{% endif %}</div>
+    {% else %}<h2>{{ b.package.name }}</h2><div class="muted">{{ b.package.departure_date|date:"d M Y" }} – {{ b.package.return_date|date:"d M Y" }} · {{ b.package.destination_city }}</div>{% endif %}
+  </div>
+  <div class="stats"><div><b>{{ b.status|status_badge }}</b><span>Status</span></div><div><b>{{ b.total_amount|compact }}</b><span>Total (ETB)</span></div>
+    <div><b>{{ paid|compact }}</b><span>Paid (ETB)</span></div>
+    {% if b.status == 'CONFIRMED' and tickets %}<div><b>{{ checked_in }}/{{ tickets }}</b><span>Checked in</span></div>{% else %}<div><b>{{ passengers|length }}</b><span>Travellers</span></div>{% endif %}</div>
+</div>
+
+{% if b.is_payable %}<div class="note-box mt"><b>Awaiting payment.</b> Seats are held until {{ b.expires_at|date:"H:i, d M" }}. If the customer pays at the office, record it here and the tickets are issued straight away.</div>
+{% elif b.status == 'PENDING_PAYMENT' %}<div class="note-box red mt"><b>The seat hold has ended.</b> The booking will expire on the next scheduler run; make a new booking if the customer still wants to travel.</div>{% endif %}
+{% if paid_late %}<div class="note-box red mt"><b>Paid after the hold ended.</b> {{ paid|money }} was received but no ticket was issued. Refund the customer or rebook them.</div>{% endif %}
+{% if b.refund_due %}<div class="note-box red mt"><b>Refund due.</b> This paid booking was cancelled on {{ b.cancelled_at|date:"d M Y" }}{% if b.cancelled_by %} by {{ b.cancelled_by.full_name }}{% endif %}. Up to {{ refundable|money }} can be refunded.</div>{% endif %}
+{% if b.status == 'REFUNDED' %}<div class="note-box green mt"><b>Refunded {{ b.refunded_amount|money }}</b> by {{ b.refund_method }}{% if b.refund_reference %} (ref <span class="mono">{{ b.refund_reference }}</span>){% endif %} on {{ b.refunded_at|date:"d M Y, H:i" }}.</div>{% endif %}
+
+<div class="grid g-21 mt">
+  <div class="card">
+    <div class="card-h"><h2>Passengers &amp; e-tickets</h2>{% if b.flight %}<a class="small" href="{% url 'console:flight_manifest' b.flight_id %}">Flight manifest →</a>{% endif %}</div>
+    <div class="table-wrap"><table class="t"><thead><tr><th>Passenger</th><th>Passport</th><th>Seat</th><th>Extra baggage</th><th>Ticket</th><th class="r">Desk</th></tr></thead><tbody>
+    {% for p in passengers %}<tr>
+      <td class="strong">{{ p.title }} {{ p.first_name }} {{ p.last_name }}<div class="small muted">{{ p.get_passenger_type_display }} · {{ p.get_gender_display }} · born {{ p.date_of_birth|date:"d M Y" }}</div>{% if p.special_requests %}<div class="small gold-text">{{ p.special_requests }}</div>{% endif %}</td>
+      <td class="mono small">{{ p.passport_number|default:"—" }}{% if p.passport_expiry %}<div class="muted">exp {{ p.passport_expiry|date:"M Y" }}</div>{% endif %}</td>
+      <td>{% if p.seat %}<span class="badge b-green">{{ p.seat.number }}</span> <span class="small muted">{{ p.seat.get_position_display }}</span>{% else %}—{% endif %}</td>
+      <td class="small">{% for bag in p.baggage.all %}{{ bag.quantity }}× {{ bag.option.name }}<br>{% empty %}—{% endfor %}</td>
+      <td>{% if p.ticket %}<span class="mono small">{{ p.ticket.ticket_number }}</span><br>{{ p.ticket.status|status_badge }}{% if p.ticket.checked_in_at %}<div class="small muted">{{ p.ticket.checked_in_at|date:"d M, H:i" }}</div>{% endif %}{% else %}<span class="muted small">Not issued</span>{% endif %}</td>
+      <td class="r">{% if p.ticket and b.status == 'CONFIRMED' %}<form method="post" class="actions" style="justify-content:flex-end">{% csrf_token %}<input type="hidden" name="ticket" value="{{ p.ticket.pk }}">
+        {% if p.ticket.status == 'ISSUED' %}<button class="btn xs" name="action" value="check_in">Check in</button>
+        {% elif p.ticket.status == 'CHECKED_IN' %}<button class="btn xs" name="action" value="board">Board</button><button class="btn ghost xs" name="action" value="undo">Undo</button>
+        {% elif p.ticket.status == 'BOARDED' %}<button class="btn ghost xs" name="action" value="undo">Undo</button>{% endif %}</form>{% endif %}</td></tr>{% endfor %}
+    </tbody></table></div>
+  </div>
+  <div class="card">
+    <div class="card-h"><h2>Price &amp; payment</h2></div>
+    <dl class="kv">
+      <dt>Fare</dt><dd class="num">{{ b.fare_amount|money }}</dd><dt>Taxes &amp; fees</dt><dd class="num">{{ b.tax_amount|money }}</dd>
+      <dt>Seat selection</dt><dd class="num">{{ b.seat_amount|money }}</dd><dt>Extra baggage</dt><dd class="num">{{ b.baggage_amount|money }}</dd>
+      {% if b.discount_amount %}<dt>Credit ({{ b.get_funding_source_display }})</dt><dd class="num">−{{ b.discount_amount|money }}</dd>{% endif %}
+      <dt class="strong" style="color:var(--text)">Total</dt><dd class="num" style="font-size:18px">{{ b.total_amount|money }}</dd>
+      {% if b.refunded_amount %}<dt>Refunded</dt><dd class="num" style="color:var(--red)">−{{ b.refunded_amount|money }}</dd>{% endif %}
+    </dl>
+    <hr style="border:0;border-top:1px solid var(--line);margin:18px 0">
+    <dl class="kv">
+      <dt>Contact</dt><dd>{{ b.contact_phone|tel }}{% if b.contact_email %}<br>{{ b.contact_email }}{% endif %}</dd>
+      <dt>Confirmed</dt><dd>{{ b.confirmed_at|date:"d M Y, H:i"|default:"—" }}</dd>
+      {% if b.cancelled_at %}<dt>Cancelled</dt><dd>{{ b.cancelled_at|date:"d M Y, H:i" }}<br><span class="small muted">{{ b.cancellation_reason }}{% if b.cancelled_by %} · {{ b.cancelled_by.full_name }}{% endif %}</span></dd>{% endif %}
+      {% if b.funding_reference %}<dt>Funding ref</dt><dd class="mono small">{{ b.funding_reference|truncatechars:24 }}</dd>{% endif %}
+      <dt>Cancellation</dt><dd class="small">{{ policy.message|default:"—" }}</dd>
+    </dl>
+  </div>
+</div>
+
+<div class="grid g-2 mt">
+  <div class="card">
+    <div class="card-h"><h2>Payments</h2>{% if b.is_payable %}<button class="btn sm" data-open="pay-dialog">+ Record payment</button>{% endif %}</div>
+    <div class="table-wrap"><table class="t"><thead><tr><th>When</th><th>Method</th><th>Reference</th><th>Status</th><th class="r">Amount</th></tr></thead><tbody>
+    {% for p in payments %}<tr><td class="small nowrap">{{ p.created_at|date:"d M, H:i" }}</td>
+      <td>{{ p.get_provider_display }}{% if p.recorded_by %}<div class="small muted">by {{ p.recorded_by.full_name }}</div>{% endif %}</td>
+      <td class="mono small">{{ p.provider_reference|default:"—"|truncatechars:22 }}</td>
+      <td>{{ p.status|status_badge }}{% if p.failure_reason %}<div class="small muted">{{ p.failure_reason }}</div>{% endif %}{% if p.refunded_amount %}<div class="small muted">refunded {{ p.refunded_amount|money }}</div>{% endif %}</td>
+      <td class="r num">{{ p.amount|money }}</td></tr>
+    {% empty %}<tr><td colspan="5" class="empty">No payment attempts.</td></tr>{% endfor %}</tbody></table></div>
+  </div>
+  <div class="card">
+    <div class="card-h"><h2>Activity</h2><span>{{ events|length }} event{{ events|length|pluralize }}</span></div>
+    <form method="post" style="display:flex;gap:8px;margin-bottom:6px">{% csrf_token %}<input type="hidden" name="action" value="note">
+      <input class="grow" type="text" name="note" maxlength="250" placeholder="Add an internal note (call, request, change…)" required style="flex:1"><button class="btn sm">Add note</button></form>
+    <ul class="timeline">{% for e in events %}
+      <li><span class="tl-dot" style="background:var(--{% if e.tone == 'green' %}green{% elif e.tone == 'gold' %}gold{% elif e.tone == 'red' %}red{% else %}muted{% endif %})">{{ e.kind|slice:":1" }}</span>
+        <div style="min-width:0"><div><span class="event-kind" style="color:var(--{% if e.tone == 'green' %}green{% elif e.tone == 'gold' %}gold{% elif e.tone == 'red' %}red{% else %}muted{% endif %})">{{ e.get_kind_display }}</span> · <span class="small muted">{{ e.created_at|date:"d M Y, H:i" }}{% if e.by %} · {{ e.by.full_name }}{% endif %}</span></div>
+          <div class="small">{{ e.message }}</div></div></li>
+    {% empty %}<li class="small muted">No activity recorded yet.</li>{% endfor %}</ul>
+  </div>
+</div>
+
+{# ------------------------------------------------------------------ dialogs #}
+{% if b.is_payable %}
+<dialog class="modal" id="pay-dialog"><form method="post">{% csrf_token %}<input type="hidden" name="action" value="record_payment">
+  <div class="modal-h"><h3>Record payment – {{ b.total_amount|money }}</h3><button type="button" class="x" data-close>&times;</button></div>
+  <div class="modal-b">
+    <p class="small muted" style="margin-top:0">The full amount must be received. The booking is confirmed and e-tickets are issued immediately; the customer sees them in the app.</p>
+    <div class="field"><label>Method</label><select name="method">{% for v, l in office_methods %}<option value="{{ v }}">{{ l }}</option>{% endfor %}</select></div>
+    <div class="field"><label>Reference</label><input type="text" name="reference" maxlength="64" placeholder="Bank / mobile-money transaction ID (required for transfers)"></div>
+    <div class="field"><label>Note</label><input type="text" name="note" maxlength="200" placeholder="Optional, e.g. receipt number"></div>
+  </div>
+  <div class="modal-f"><button type="button" class="btn ghost" data-close>Cancel</button><button class="btn">Confirm &amp; issue tickets</button></div>
+</form></dialog>
+{% endif %}
+
+{% if b.status == 'PENDING_PAYMENT' or b.status == 'CONFIRMED' %}
+<dialog class="modal" id="cancel-dialog"><form method="post">{% csrf_token %}<input type="hidden" name="action" value="cancel">
+  <div class="modal-h"><h3>Cancel booking {{ b.reference }}</h3><button type="button" class="x" data-close>&times;</button></div>
+  <div class="modal-b">
+    <div class="note-box {% if b.status == 'CONFIRMED' %}red{% endif %}" style="margin-bottom:12px">Seats are released{% if b.status == 'CONFIRMED' %} and the e-tickets are voided. {{ paid|money }} was paid – record the refund afterwards (policy: {{ policy.message|default:"office decision" }}){% endif %}.</div>
+    <div class="field"><label>Reason</label><input type="text" name="reason" maxlength="200" placeholder="e.g. Customer request by phone" required></div>
+    <label class="check-row"><input type="checkbox" name="notify" value="1" checked> Notify the customer</label>
+  </div>
+  <div class="modal-f"><button type="button" class="btn ghost" data-close>Keep booking</button><button class="btn danger">Cancel booking</button></div>
+</form></dialog>
+{% endif %}
+
+{% if refundable and b.status != 'PENDING_PAYMENT' %}
+<dialog class="modal" id="refund-dialog"><form method="post">{% csrf_token %}<input type="hidden" name="action" value="refund">
+  <div class="modal-h"><h3>Record a refund</h3><button type="button" class="x" data-close>&times;</button></div>
+  <div class="modal-b">
+    <p class="small muted" style="margin-top:0">{% if b.status == 'CONFIRMED' %}The booking is cancelled first (seats released, tickets voided). {% endif %}Paid {{ paid|money }}{% if b.refunded_amount %}, already refunded {{ b.refunded_amount|money }}{% endif %}. {% if policy.refundable %}Fare rules suggest {{ policy.refund_estimate|money }} after a {{ policy.fee|money }} fee.{% endif %}</p>
+    <div class="row-2">
+      <div class="field"><label>Amount (ETB)</label><input type="number" name="amount" min="1" step="0.01" max="{{ refundable|stringformat:'.2f' }}" value="{{ refund_default|stringformat:'.2f' }}" required></div>
+      <div class="field"><label>Returned by</label><select name="method">{% for m in refund_methods %}<option>{{ m }}</option>{% endfor %}</select></div>
+    </div>
+    <div class="field"><label>Reference</label><input type="text" name="reference" maxlength="64" placeholder="Transfer ID (required except cash / credit)"></div>
+    <div class="field"><label>Note</label><input type="text" name="note" maxlength="200" placeholder="Optional"></div>
+    <label class="check-row"><input type="checkbox" name="notify" value="1" checked> Notify the customer</label>
+  </div>
+  <div class="modal-f"><button type="button" class="btn ghost" data-close>Cancel</button><button class="btn danger">Record refund</button></div>
+</form></dialog>
+{% endif %}
+{% endblock %}

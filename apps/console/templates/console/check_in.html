@@ -1,0 +1,51 @@
+{% extends "console/base.html" %}{% load console_tags %}
+{% block title %}Check-in desk{% endblock %}{% block heading %}Check-in &amp; boarding desk{% endblock %}{% block crumbs %}Travel{% endblock %}
+{% block content %}
+<div class="card">
+  <form class="desk-search" method="get" action="{% url 'console:check_in' %}">
+    <input type="search" name="q" value="{{ q }}" placeholder="Booking reference, ticket number or scan the QR code…" autofocus autocomplete="off">
+    <button class="btn" type="submit">Find</button>
+  </form>
+  <p class="small muted" style="margin:10px 2px 0">A barcode scanner works like a keyboard: click the box and scan the passenger's e-ticket QR – the signature is checked automatically.</p>
+</div>
+
+{% if message %}<div class="note-box red mt">{{ message }}</div>{% endif %}
+
+{% if booking %}
+<div class="card mt">
+  <div class="card-h">
+    <div><h2 style="margin:0">{{ booking.destination_label }} <a class="mono" href="{% url 'console:booking' booking.reference %}" style="font-size:14px;margin-left:6px">{{ booking.reference }}</a></h2>
+      <div class="small muted" style="margin-top:4px">{% if booking.flight %}{{ booking.flight.flight_number }} · {{ booking.flight.departure_time|date:"D d M, H:i" }}{% if booking.flight.gate %} · Gate {{ booking.flight.gate }}{% endif %} · {{ booking.fare_class.name }} · {{ booking.fare_class.checked_baggage_kg }} kg checked{% else %}Departs {{ booking.package.departure_date|date:"D d M Y" }}{% endif %} · {{ booking.user.full_name }} {{ booking.contact_phone|tel }}</div></div>
+    <div class="actions">{{ booking.status|status_badge }}
+      {% if booking.status == 'CONFIRMED' and issued > 1 %}<form method="post">{% csrf_token %}<input type="hidden" name="q" value="{{ q }}"><input type="hidden" name="booking" value="{{ booking.pk }}"><button class="btn sm" name="action" value="check_in_all">Check in all ({{ issued }})</button></form>{% endif %}</div>
+  </div>
+  {% for p in passengers %}{% with t=p.ticket %}
+  <div class="pax-row" {% if ticket and t and t.pk == ticket.pk %}style="background:var(--green-tint);margin:0 -20px;padding:14px 20px"{% endif %}>
+    <div class="who"><span class="seat-tag">{{ p.seat.number|default:"—" }}</span>
+      <div style="min-width:0"><div class="strong">{{ p.last_name|upper }}, {{ p.first_name }} {% if p.title %}<span class="muted small">{{ p.title }}</span>{% endif %}</div>
+        <div class="small muted">{{ p.get_passenger_type_display }} · {{ p.nationality }} · passport <span class="mono">{{ p.passport_number|default:"missing" }}</span>{% if p.passport_expiry %} · exp {{ p.passport_expiry|date:"M Y" }}{% endif %}</div>
+        {% if p.baggage.all %}<div class="small">{% for bag in p.baggage.all %}{{ bag.quantity }}× {{ bag.option.name }}{% if not forloop.last %}, {% endif %}{% endfor %}</div>{% endif %}
+        {% if p.special_requests %}<div class="small gold-text">{{ p.special_requests }}</div>{% endif %}</div></div>
+    <div class="small">{% if t %}<span class="mono">{{ t.ticket_number }}</span><div>{{ t.status|status_badge }}{% if t.checked_in_at %} <span class="muted">{{ t.checked_in_at|date:"H:i" }}</span>{% endif %}{% if t.boarded_at %} → <span class="muted">{{ t.boarded_at|date:"H:i" }}</span>{% endif %}</div>{% else %}<span class="muted">No ticket</span>{% endif %}</div>
+    <div>{% if t and booking.status == 'CONFIRMED' %}<form method="post" class="actions">{% csrf_token %}<input type="hidden" name="q" value="{{ q }}"><input type="hidden" name="ticket" value="{{ t.pk }}">
+      {% if t.status == 'ISSUED' %}<button class="btn" name="action" value="check_in">Check in</button>
+      {% elif t.status == 'CHECKED_IN' %}<button class="btn" name="action" value="board">Board</button><button class="btn ghost sm" name="action" value="undo">Undo</button>
+      {% elif t.status == 'BOARDED' %}<span class="badge b-green">On board ✓</span><button class="btn ghost sm" name="action" value="undo">Undo</button>{% endif %}</form>{% endif %}</div>
+  </div>{% endwith %}{% endfor %}
+</div>
+{% endif %}
+
+<div class="card mt">
+  <div class="card-h"><h2>Departures – next 36 hours</h2><span>Check-in progress per flight</span></div>
+  <div class="table-wrap"><table class="t"><thead><tr><th>Flight</th><th>Route</th><th>Departs</th><th>Gate</th><th style="min-width:180px">Checked in</th><th class="r">Boarded</th><th></th></tr></thead><tbody>
+  {% for f in departures %}<tr>
+    <td><a class="strong" href="{% url 'console:flight' f.pk %}">{{ f.flight_number }}</a>{% if f.status != 'SCHEDULED' %}<div>{{ f.status|status_badge }}</div>{% endif %}</td>
+    <td>{{ f.origin.iata }} → {{ f.destination.iata }}<div class="small muted">{{ f.destination.city }}</div></td>
+    <td class="nowrap">{{ f.departure_time|date:"D d M, H:i" }}<div class="small muted">{{ f.departure_time|timeuntil }}</div></td>
+    <td>{{ f.gate|default:"—" }}</td>
+    <td><div class="progress"><i style="width:{{ f.progress }}%"></i></div><span class="small muted">{{ f.checked }}/{{ f.tickets }} passengers</span></td>
+    <td class="r num">{{ f.boarded }}</td>
+    <td class="r"><a class="btn ghost xs" href="{% url 'console:flight_manifest' f.pk %}">Manifest</a></td></tr>
+  {% empty %}<tr><td colspan="7" class="empty">No departures in the next 36 hours.</td></tr>{% endfor %}</tbody></table></div>
+</div>
+{% endblock %}

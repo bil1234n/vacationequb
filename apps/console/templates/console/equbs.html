@@ -1,0 +1,54 @@
+{% extends "console/base.html" %}{% load console_tags %}
+{% block title %}Equb groups{% endblock %}{% block heading %}Equb groups{% endblock %}{% block crumbs %}Equb{% endblock %}
+{% block actions %}<a class="btn ghost" href="{% url 'console:equb_draws' %}">Equb draws</a><a class="btn ghost" href="{% url 'console:equb_packages' %}">Equb packages</a><a class="btn" href="{% url 'console:equb_add' %}{% if package %}?package={% for p in packages %}{% if p.slug == package %}{{ p.pk }}{% endif %}{% endfor %}{% endif %}">+ New Equb group</a>{% endblock %}
+{% block content %}
+<div class="grid g-4">
+  <div class="card kpi dark"><div class="label">Total saved</div><div class="value">{{ saved|compact }} <small style="font-size:14px">ETB</small></div><div class="sub">Settled contributions, all pools</div></div>
+  <div class="card kpi"><div class="label">Collection rate</div><div class="value">{{ summary.collection_rate }}%</div><div class="sub">of {{ summary.expected|compact }} ETB due so far</div></div>
+  <div class="card kpi {% if summary.arrears %}gold{% endif %}"><div class="label">In arrears</div><div class="value">{{ summary.arrears|compact }} <small style="font-size:14px">ETB</small></div><div class="sub">{{ summary.members_in_arrears }} member{{ summary.members_in_arrears|pluralize }} behind · <a href="{% url 'console:equb_collections' %}">collections →</a></div></div>
+  <div class="card kpi"><div class="label">Payouts issued</div><div class="value">{{ payouts.n|default:0 }}</div><div class="sub">{{ payouts.s|default:0|money }} · <a href="{% url 'console:equb_draws' %}?tab=payouts">{{ liability.issued_count }} not yet used →</a></div></div>
+</div>
+
+<div class="grid g-3 mt">
+  <div class="card" style="grid-column: span 2"><div class="card-h"><h2>Contributions received</h2><span>Last 30 days</span></div><div class="chart-box"><canvas data-chart="savings"></canvas></div></div>
+  <div class="card"><div class="card-h"><h2>Member standing</h2><span>Live places</span></div><div class="chart-box"><canvas data-chart="standing"></canvas></div></div>
+</div>
+
+<div class="card mt">
+  <div class="card-h"><h2>Groups</h2>
+    <div class="chips">
+      <form method="get" style="display:inline-flex;gap:6px">{% if status %}<input type="hidden" name="status" value="{{ status }}">{% endif %}
+        <input type="search" name="q" value="{{ q }}" placeholder="Search name or code…" style="height:32px;width:180px">
+        <select name="package" onchange="this.form.submit()" style="height:32px"><option value="">All packages</option>{% for p in packages %}<option value="{{ p.slug }}" {% if p.slug == package %}selected{% endif %}>{{ p.name }}</option>{% endfor %}</select></form>
+      <a class="chip {% if not status %}on{% endif %}" href="{% qs status=None %}">All</a>
+      {% for v, l in statuses %}{% if counts|get_item:v %}<a class="chip {% if status == v %}on{% endif %}" href="{% qs status=v %}">{{ l }} · {{ counts|get_item:v }}</a>{% endif %}{% endfor %}
+    </div>
+  </div>
+  <div class="table-wrap"><table class="t">
+  <thead><tr><th>Group</th><th>Equb package</th><th class="r">Contribution</th><th style="width:170px">Members</th><th>Round</th><th>Behind</th><th class="r">Collected</th><th>Status</th></tr></thead>
+  <tbody>{% for g in groups %}<tr>
+    <td><a class="strong" href="{% url 'console:equb' g.slug %}">{{ g.name }}</a>
+      <div class="small muted">code <span class="mono">{{ g.join_code }}</span></div></td>
+    <td>{% if g.equb_package %}<a class="small" href="{% url 'console:equb_package' g.equb_package.slug %}">{{ g.equb_package.name|truncatechars:30 }}</a>{% else %}<span class="muted small">—</span>{% endif %}</td>
+    <td class="r num">{{ g.contribution_amount|money }}<div class="small muted">{{ g.get_frequency_display|lower }}{% if g.duration_label %} · {{ g.duration_label }}{% endif %}</div></td>
+    <td><div style="display:flex;gap:8px;align-items:center"><div class="bar" style="flex:1"><i style="width:{{ g.fill }}%"></i></div><span class="small num">{{ g.members }}/{{ g.max_members }}</span></div></td>
+    <td class="num">{% if g.current_round %}{{ g.current_round }}/{{ g.total_rounds }}{% else %}—{% endif %}</td>
+    <td>{% if g.behind %}<a href="{% url 'console:equb' g.slug %}?tab=members&standing=behind"><span class="badge b-red">{{ g.behind }} · {{ g.arrears|compact }}</span></a>{% elif g.status == 'ACTIVE' %}<span class="badge b-green">All paid</span>{% else %}<span class="muted">—</span>{% endif %}</td>
+    <td class="r num strong">{{ g.collected|money }}</td><td>{{ g.status|status_badge }}<div class="small muted">{% if g.draw_type == 'MANUAL' %}Manual draw{% else %}Automatic draw{% endif %}</div></td></tr>
+  {% empty %}<tr><td colspan="8" class="empty">No Equb groups {% if status or package or q %}match these filters{% else %}yet. <a href="{% url 'console:equb_packages' %}">Start from a package →</a>{% endif %}</td></tr>{% endfor %}</tbody>
+  </table></div>
+</div>
+
+<div class="grid g-2 mt">
+  <div class="card"><div class="card-h"><h2>Members by package</h2></div><div class="chart-box sm"><canvas data-chart="members"></canvas></div></div>
+  <div class="card"><div class="card-h"><h2>Daily operations</h2></div>
+    <div class="side-actions">
+      <a class="btn ghost" href="{% url 'console:equb_collections' %}">Collections &amp; arrears ageing</a>
+      <a class="btn ghost" href="{% url 'console:call_center' %}">Call centre – members to call</a>
+      <a class="btn ghost" href="{% url 'console:terminations' %}">Terminations &amp; exit requests</a>
+      <a class="btn ghost" href="{% url 'console:equb_draws' %}">Equb draws &amp; winner payouts</a>
+      <a class="btn ghost" href="{% url 'console:group_equbs' %}">Group Equbs (family, friends, company)</a>
+    </div>
+  </div>
+</div>
+{% endblock %}

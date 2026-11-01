@@ -1,0 +1,29 @@
+{% extends "console/base.html" %}{% load console_tags %}
+{% block title %}Equb packages{% endblock %}{% block heading %}Equb packages{% endblock %}{% block crumbs %}Equb{% endblock %}
+{% block actions %}<a class="btn ghost" href="{% url 'console:equbs' %}">Equb groups</a><a class="btn" href="{% url 'console:equb_package_add' %}">+ New Equb package</a>{% endblock %}
+{% block content %}
+<div class="note-box" style="margin-bottom:16px"><b>How it works:</b> an <b>Equb package</b> is a name and its terms.
+  Each <b>Equb group</b> is created from a package with its own amount, frequency, members, rounds and dates. <b>Members</b> join a group.</div>
+<div class="grid g-4" style="margin-bottom:16px">
+  <div class="card kpi dark"><div class="label">Packages</div><div class="value">{{ totals.packages }}</div></div>
+  <div class="card kpi"><div class="label">Groups</div><div class="value">{{ totals.groups }}</div></div>
+  <div class="card kpi"><div class="label">Members</div><div class="value">{{ totals.members }}</div></div>
+  <div class="card kpi"><div class="label">Collected</div><div class="value">{{ totals.collected|compact }} <small style="font-size:14px">ETB</small></div></div>
+</div>
+<div class="card">
+  <div class="card-h"><h2>All packages</h2>
+    <div class="chips"><a class="chip {% if not active %}on{% endif %}" href="?">All</a><a class="chip {% if active == '1' %}on{% endif %}" href="?active=1">Active</a><a class="chip {% if active == '0' %}on{% endif %}" href="?active=0">Inactive</a></div></div>
+  <div class="table-wrap"><table class="t">
+    <thead><tr><th>Package</th><th class="r">Group amounts</th><th>Groups</th><th class="r">Members</th><th class="r">Collected</th><th>Status</th><th></th></tr></thead>
+    <tbody>{% for p in packages %}<tr>
+      <td><a class="strong" href="{% url 'console:equb_package' p.slug %}">{{ p.name }}</a></td>
+      <td class="r num">{% if p.min_amount %}{{ p.min_amount|money }}{% if p.max_amount != p.min_amount %} – {{ p.max_amount|money }}{% endif %}{% else %}—{% endif %}</td>
+      <td>{{ p.n_groups }}{% if p.n_open or p.n_running %}<div class="small muted">{{ p.n_open }} open · {{ p.n_running }} running</div>{% endif %}</td>
+      <td class="r num">{{ p.n_members }}</td>
+      <td class="r num strong">{{ p.collected|money }}</td>
+      <td>{% if p.is_active %}<span class="badge b-green">Active</span>{% else %}<span class="badge b-grey">Inactive</span>{% endif %}</td>
+      <td class="r">{% if p.is_active %}<a class="btn ghost xs" href="{% url 'console:equb_add' %}?package={{ p.pk }}">+ Group</a>{% endif %}</td></tr>
+    {% empty %}<tr><td colspan="7" class="empty">No Equb packages yet. <a href="{% url 'console:equb_package_add' %}">Create the first one →</a></td></tr>{% endfor %}</tbody>
+  </table></div>
+</div>
+{% endblock %}

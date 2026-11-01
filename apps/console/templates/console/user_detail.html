@@ -1,0 +1,32 @@
+{% extends "console/base.html" %}{% load console_tags %}
+{% block title %}{{ u.full_name }}{% endblock %}{% block heading %}{{ u.full_name }}{% endblock %}
+{% block crumbs %}<a href="{% url 'console:users' %}">Customers</a> / {{ u.full_name }}{% endblock %}
+{% block actions %}{% if not u.is_staff %}<a class="btn {% if not u.has_usable_password %}gold{% else %}ghost{% endif %}" href="{% url 'console:user_edit' u.pk %}">{% if not u.has_usable_password %}Set password{% else %}Edit profile &amp; password{% endif %}</a>{% endif %}{% endblock %}
+{% block content %}
+{% if not u.is_staff and not u.has_usable_password %}<div class="msg warning" style="display:flex;justify-content:space-between;align-items:center;gap:12px">This customer was registered at the desk and has no password yet, so they can't sign in to the app. <a class="btn sm" href="{% url 'console:user_edit' u.pk %}">Set a password</a></div>{% endif %}
+<div class="hero">
+  <div style="display:flex;gap:18px;align-items:center"><span class="avatar lg" style="background:var(--gold);color:var(--green)">{{ u.full_name|initials }}</span>
+    <div><div class="muted small">Customer since {{ u.date_joined|date:"d M Y" }}{% if u.referred_by %} · referred by {{ u.referred_by.full_name }}{% endif %}</div><h2>{{ u.full_name }}</h2><div class="muted">{{ u.phone }}{% if u.email %} · {{ u.email }}{% endif %} · code <span class="mono">{{ u.referral_code }}</span></div></div></div>
+  <div class="stats"><div><b>{{ total_spent|compact }}</b><span>Total paid (ETB)</span></div><div><b>{{ bookings|length }}</b><span>Bookings</span></div><div><b>{{ memberships|length }}</b><span>Equbs</span></div><div><b>{{ referrals|length }}</b><span>Referrals</span></div></div>
+</div>
+<div class="grid g-21 mt">
+  <div class="card"><div class="card-h"><h2>Bookings</h2></div>
+    <div class="table-wrap"><table class="t"><thead><tr><th>Ref</th><th>Trip</th><th>Status</th><th class="r">Total</th></tr></thead><tbody>
+    {% for b in bookings %}<tr><td><a class="mono strong" href="{% url 'console:booking' b.reference %}">{{ b.reference }}</a></td><td>{% if b.flight %}{{ b.flight.origin.iata }} → {{ b.flight.destination.iata }} · {{ b.flight.departure_time|date:"d M" }}{% else %}{{ b.package.name }}{% endif %}</td><td>{{ b.status|status_badge }}</td><td class="r num">{{ b.total_amount|money }}</td></tr>
+    {% empty %}<tr><td colspan="4" class="empty">No bookings.</td></tr>{% endfor %}</tbody></table></div></div>
+  <div class="card"><div class="card-h"><h2>Spending mix</h2></div><div class="chart-box sm"><canvas data-chart="spend"></canvas></div></div>
+</div>
+<div class="grid g-3 mt">
+  <div class="card"><div class="card-h"><h2>Equb memberships</h2></div>
+    {% for m in memberships %}<div style="padding:8px 0;border-bottom:1px solid var(--line)"><div style="display:flex;justify-content:space-between;gap:8px"><a class="strong" href="{% url 'console:equb_member' m.pk %}">{{ m.group.name }}</a>{{ m.standing.status|standing_badge }}</div><div class="small muted">#{{ m.position }} · paid {{ m.total_paid|money }}{% if m.standing.arrears %} · <span style="color:var(--red)">owes {{ m.standing.arrears|money }}</span>{% endif %}{% if m.has_won %} · 🏆 won{% endif %}</div></div>
+    {% empty %}<div class="empty">Not in any Equb.</div>{% endfor %}</div>
+  <div class="card"><div class="card-h"><h2>Community</h2></div>
+    {% for d in donations %}<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--line)"><a href="{% url 'console:campaign' d.campaign.slug %}">🤲 {{ d.campaign.title }}</a><span class="strong num">{{ d.amount|money }}</span></div>{% endfor %}
+    {% for e in entries %}<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--line)"><a href="{% url 'console:giveaway' e.giveaway.slug %}">🎁 {{ e.giveaway.title }}</a><span class="small"><b>{{ e.referrals }}</b> referrals · <b>{{ e.entries }}</b> free entr{{ e.entries|pluralize:"y,ies" }}</span></div>{% endfor %}
+    {% if not donations and not entries %}<div class="empty">No donations or giveaway referrals.</div>{% endif %}
+    {% for w in wins %}<div class="msg success" style="margin:10px 0 0">🏆 Won {{ w.giveaway.title }} · entry #{{ w.ticket_number }}</div>{% endfor %}</div>
+  <div class="card"><div class="card-h"><h2>Recent payments</h2></div>
+    {% for p in payments %}<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--line)"><div class="small">{{ p.purpose|purpose_short }}<div class="muted">{{ p.created_at|date:"d M, H:i" }}</div></div><div style="text-align:right"><div class="num strong">{{ p.amount|money }}</div>{{ p.status|status_badge }}</div></div>
+    {% empty %}<div class="empty">No payments.</div>{% endfor %}</div>
+</div>
+{% endblock %}

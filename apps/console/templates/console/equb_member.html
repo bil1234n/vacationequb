@@ -1,0 +1,183 @@
+{% extends "console/base.html" %}{% load console_tags %}
+{% block title %}{{ m.user.full_name }} · {{ g.name }}{% endblock %}{% block heading %}{{ m.user.full_name }}{% endblock %}
+{% block crumbs %}<a href="{% url 'console:equbs' %}">Equb groups</a> / <a href="{% url 'console:equb' g.slug %}?tab=members">{{ g.name }}</a> / Place #{{ m.position }}{% endblock %}
+{% block actions %}
+  {% if m.status != 'LEFT' and plan.options %}<button class="btn" data-open="pay-dialog">Record payment</button>{% endif %}
+  {% if m.is_live %}<button class="btn ghost" data-open="call-dialog">Log call</button>{% endif %}
+  <a class="btn {% if not m.user.has_usable_password %}gold{% else %}ghost{% endif %}" href="{% url 'console:user_edit' m.user_id %}?next={{ request.path|urlencode }}">{% if not m.user.has_usable_password %}Set password{% else %}Edit profile{% endif %}</a>
+{% endblock %}
+{% block content %}
+{% if not m.user.has_usable_password %}<div class="msg warning" style="display:flex;justify-content:space-between;align-items:center;gap:12px"><span><b>{{ m.user.full_name }}</b> is a new customer without a password – they can't sign in to the app yet.</span><a class="btn sm" href="{% url 'console:user_edit' m.user_id %}?next={{ request.path|urlencode }}">Edit profile &amp; set password</a></div>{% endif %}
+<div class="hero">
+  <div style="display:flex;gap:18px;align-items:center"><span class="avatar lg" style="background:var(--gold);color:var(--green)">{{ m.user.full_name|initials }}</span>
+    <div><div class="muted small">Place #{{ m.position }} in <a href="{% url 'console:equb' g.slug %}" style="color:#fff;text-decoration:underline">{{ g.name }}</a> · joined {{ m.created_at|date:"d M Y" }}</div>
+      <h2>{{ m.user.full_name }}</h2>
+      <div class="muted"><a href="tel:{{ m.user.phone }}" style="color:#fff">{{ m.user.phone }}</a> · <a href="{% url 'console:user' m.user_id %}" style="color:rgba(255,255,255,.8)">customer profile →</a></div></div></div>
+  <div class="stats"><div><b>{{ s.status|standing_badge }}</b><span>Standing</span></div><div><b>{{ m.total_paid|compact }}</b><span>Paid (ETB)</span></div>
+    <div><b>{{ s.arrears|compact }}</b><span>Arrears (ETB)</span></div><div><b>{{ s.credit|compact }}</b><span>Credit (ETB)</span></div></div>
+</div>
+
+{% if s.critical %}<div class="note-box red mt"><b>Winner who owes money.</b> {{ m.user.first_name }} won round {{ s.won_round }} and has {{ s.missed_rounds }} unpaid round{{ s.missed_rounds|pluralize }} ({{ s.arrears|money }}). This is the most important debt to collect.</div>{% endif %}
+{% if m.exit_requested_at %}<div class="note-box mt"><div style="display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap">
+  <div><b>Asked to leave on {{ m.exit_requested_at|date:"d M Y" }}:</b> “{{ m.exit_request_reason }}”</div>
+  <div class="actions"><form method="post" data-confirm="Approve the exit? The place is closed and the member is told.">{% csrf_token %}<input type="hidden" name="action" value="approve_exit"><button class="btn sm">Approve exit</button></form>
+    <button class="btn ghost sm" data-open="decline-dialog">Decline</button></div></div></div>{% endif %}
+{% if m.termination_requested_at %}<div class="note-box red mt"><div style="display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap">
+  <div><b>On the termination list</b> since {{ m.termination_requested_at|date:"d M Y" }}{% if m.termination_note %} – {{ m.termination_note }}{% endif %}</div>
+  <div class="actions"><button class="btn danger sm" data-open="terminate-dialog">Terminate place</button>
+    <form method="post">{% csrf_token %}<input type="hidden" name="action" value="cancel_termination"><button class="btn ghost sm">Keep member</button></form></div></div></div>{% endif %}
+{% if active_termination %}<div class="note-box mt"><div style="display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap">
+  <div><b>Terminated {{ active_termination.created_at|date:"d M Y" }}</b> – {{ active_termination.get_reason_display }}{% if active_termination.note %}: {{ active_termination.note }}{% endif %}. Owed at the time: {{ active_termination.arrears_at_termination|money }}.</div>
+  {% if g.status == 'ACTIVE' %}<form method="post" data-confirm="Reinstate this place? The member is billed again from the current round.">{% csrf_token %}<input type="hidden" name="action" value="reinstate"><button class="btn sm">Reinstate</button></form>{% endif %}</div></div>{% endif %}
+{% if s.draw_blocked %}<div class="note-box red mt"><div style="display:flex;justify-content:space-between;gap:12px;align-items:center">
+  <div><b>Held out of draws until {{ m.draw_blocked_until|date:"d M Y" }}</b> – {{ m.draw_block_reason }}</div>
+  <form method="post">{% csrf_token %}<input type="hidden" name="action" value="unblock"><button class="btn ghost sm">Remove hold</button></form></div></div>{% endif %}
+
+<div class="grid g-21 mt">
+  <div class="card" id="schedule">
+    <div class="card-h"><h2>Payment schedule</h2><span>{{ s.paid_rounds }} of {{ s.total_rounds }} rounds paid</span></div>
+    <div class="table-wrap"><table class="t"><thead><tr><th>Round</th><th>Due</th><th>Status</th><th>Paid</th><th>Receipt</th><th class="r">Late fee</th><th class="r">Amount</th><th></th></tr></thead><tbody>
+    {% for row in schedule %}<tr class="{% if row.state == 'overdue' %}critical{% endif %}">
+      <td class="strong">R{{ row.round }}{% if row.you_won %} 🏆{% endif %}</td><td class="small" style="white-space:nowrap">{{ row.due|date:"d M Y" }}</td>
+      <td>{{ row.state|schedule_badge }}{% if row.winners and not row.you_won %}<div class="small muted">Winner: {{ row.winners|join:", " }}</div>{% endif %}</td>
+      <td class="small" style="white-space:nowrap">{{ row.paid|date:"d M Y"|default:"—" }}</td><td class="mono small">{{ row.receipt|default:"—" }}</td>
+      <td class="r num">{% if row.late_fee != "0.00" %}{{ row.late_fee|money }}{% else %}—{% endif %}</td><td class="r num">{{ row.amount|money }}</td>
+      <td class="r">{% if row.late_fee != "0.00" and row.state == 'overdue' %}<button class="btn ghost xs" data-open="waive-dialog" data-fill='{"round_id":"{{ row.round_id }}","round_label":"Round {{ row.round }}"}'>Waive fee</button>{% endif %}</td></tr>
+    {% empty %}<tr><td colspan="8" class="empty">The schedule appears when the Equb starts.</td></tr>{% endfor %}</tbody></table></div>
+  </div>
+  <div>
+    <div class="card">
+      <div class="card-h"><h2>Standing</h2>{{ s.status|standing_badge }}</div>
+      <div class="mini-kpis">
+        <div><b>{{ s.missed_rounds }}</b><span>Unpaid rounds</span></div><div><b>{{ s.days_overdue }}</b><span>Days overdue</span></div><div><b>{{ s.collection_rate }}%</b><span>Paid of due</span></div>
+        <div><b>{{ s.on_time_streak }}</b><span>On-time streak</span></div><div><b>{{ s.late_count }}</b><span>Times late</span></div><div><b>{{ s.advance_rounds }}</b><span>Rounds ahead</span></div>
+      </div>
+      <dl class="kv" style="margin-top:14px">
+        <dt>Next payment</dt><dd>{% if s.next_due_date %}R{{ s.next_due_round }} · {{ s.next_due_date|date:"d M Y" }} · {% if s.next_due_covered %}covered by credit{% else %}{{ s.next_due_amount|money }}{% endif %}{% else %}—{% endif %}</dd>
+        <dt>Owes now</dt><dd>{{ s.owes|money }}{% if s.due_now %} <span class="small muted">({{ s.due_now|money }} not yet late)</span>{% endif %}</dd>
+        <dt>Still to pay</dt><dd>{{ s.remaining_amount|money }} <span class="small muted">over the rest of the cycle</span></dd>
+        <dt>Late fees paid</dt><dd>{{ s.fees_paid|money }}</dd>
+        <dt>Called</dt><dd>{% if m.called_at %}{{ m.called_at|date:"d M, H:i" }} by {{ m.called_by.full_name|default:"staff" }}{% else %}Not yet{% endif %}
+          <form method="post" style="display:inline">{% csrf_token %}<input type="hidden" name="action" value="toggle_called"><button class="btn {% if m.called_at %}called{% else %}uncalled{% endif %} xs">{% if m.called_at %}Called ✓{% else %}Uncalled{% endif %}</button></form></dd>
+      </dl>
+    </div>
+    {% if payout %}<div class="card mt">
+      <div class="card-h"><h2>Payout</h2>{{ payout.status|status_badge }}</div>
+      <dl class="kv"><dt>Round</dt><dd>R{{ payout.round.number }} · {{ payout.created_at|date:"d M Y" }}</dd><dt>Amount</dt><dd>{{ payout.amount|money }} <span class="small muted">(gross {{ payout.gross_amount|money }}, fee {{ payout.fee_amount|money }})</span></dd>
+        <dt>Voucher</dt><dd class="mono">{{ payout.voucher_code }}</dd>
+        {% if payout.booking %}<dt>Used on</dt><dd><a href="{% url 'console:booking' payout.booking.reference %}">{{ payout.booking.reference }}</a></dd>{% endif %}
+        {% if payout.paid_out_at %}<dt>Paid out</dt><dd>{{ payout.paid_out_at|date:"d M Y" }} · {{ payout.paid_out_method }} {{ payout.paid_out_reference }}</dd>{% endif %}</dl>
+      {% if payout.status == 'ISSUED' %}<button class="btn ghost sm" style="margin-top:12px" data-open="payout-dialog">Mark paid out (cash/bank)</button>{% endif %}
+    </div>{% endif %}
+    {% if m.is_live %}<div class="card mt">
+      <div class="card-h"><h2>Actions</h2></div>
+      <div class="side-actions">
+        {% if not s.draw_blocked %}<button class="btn ghost" data-open="block-dialog">Hold out of draws…</button>{% endif %}
+        {% if not m.termination_requested_at %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="request_termination"><button class="btn ghost" style="width:100%">Send to termination list</button></form>{% endif %}
+        <button class="btn danger" data-open="terminate-dialog">Terminate place…</button>
+      </div>
+      <p class="small muted" style="margin-bottom:0">Exit rules: {{ exit.reason }}</p>
+    </div>{% endif %}
+  </div>
+</div>
+
+<div class="grid g-2 mt">
+  <div class="card" id="pay">
+    <div class="card-h"><h2>Payments</h2>{% if m.status != 'LEFT' and plan.options %}<button class="btn sm" data-open="pay-dialog">+ Record payment</button>{% endif %}</div>
+    <div class="table-wrap"><table class="t"><thead><tr><th>Date</th><th>Receipt</th><th>Method</th><th>Rounds</th><th class="r">Amount</th></tr></thead><tbody>
+    {% for p in payments %}<tr><td class="small" style="white-space:nowrap">{{ p.when|date:"d M Y" }}</td><td class="mono small">{{ p.reference }}</td>
+      <td class="small">{% if p.is_office %}<span class="badge b-gold">{{ p.method_display }}</span>{% else %}{{ p.method_display }}{% endif %}{% if p.status != 'PAID' %} {{ p.status|status_badge }}{% endif %}{% if p.external_reference %}<div class="muted mono">{{ p.external_reference }}</div>{% endif %}</td>
+      <td class="small">{% for n in p.rounds %}R{{ n }}{% if not forloop.last %}, {% endif %}{% empty %}credit{% endfor %}</td><td class="r num strong">{{ p.amount|money }}</td></tr>
+    {% empty %}<tr><td colspan="5" class="empty">No payments yet.</td></tr>{% endfor %}</tbody></table></div>
+  </div>
+  <div class="card">
+    <div class="card-h"><h2>Call history</h2>{% if m.is_live %}<button class="btn ghost sm" data-open="call-dialog">+ Log call</button>{% endif %}</div>
+    {% for c in calls %}<div style="padding:10px 0;border-bottom:1px solid var(--line)">
+      <div style="display:flex;justify-content:space-between;gap:8px"><span>{{ c|outcome_badge }}{% if c.promised_date %} <span class="small">→ pay by {{ c.promised_date|date:"d M" }}</span>{% endif %}</span><span class="small muted">{{ c.created_at|date:"d M, H:i" }} · {{ c.called_by.full_name|default:"staff" }}</span></div>
+      {% if c.feedback %}<div style="margin-top:4px">{{ c.feedback }}</div>{% endif %}
+      <div class="small muted">Owed then: {{ c.arrears_at_call|money }} · {{ c.days_overdue_at_call }} days overdue</div></div>
+    {% empty %}<div class="empty">No calls logged.</div>{% endfor %}
+  </div>
+</div>
+
+<div class="grid g-2 mt">
+  <div class="card"><div class="card-h"><h2>Internal notes</h2><span>Only staff can see these</span></div>
+    <form method="post">{% csrf_token %}<input type="hidden" name="action" value="notes"><div class="field"><textarea name="notes" rows="4" placeholder="e.g. Pays through his brother; prefers calls after 6 pm">{{ m.notes }}</textarea></div><button class="btn ghost sm">Save notes</button></form></div>
+  <div class="card"><div class="card-h"><h2>Termination history</h2></div>
+    {% for t in terminations %}<div style="padding:8px 0;border-bottom:1px solid var(--line)"><span class="strong">{{ t.get_reason_display }}</span> <span class="small muted">· {{ t.created_at|date:"d M Y" }} by {{ t.terminated_by.full_name|default:"staff" }}</span>
+      <div class="small muted">Owed {{ t.arrears_at_termination|money }} · paid {{ t.paid_at_termination|money }} · {{ t.missed_rounds }} unpaid rounds{% if t.reinstated_at %} · reinstated {{ t.reinstated_at|date:"d M Y" }}{% endif %}</div>{% if t.note %}<div class="small">{{ t.note }}</div>{% endif %}</div>
+    {% empty %}<div class="empty">Never terminated.</div>{% endfor %}</div>
+</div>
+
+{# ------------------------------------------------------------------ dialogs #}
+{% if m.status != 'LEFT' and plan.options %}
+<dialog class="modal" id="pay-dialog"><form method="post">{% csrf_token %}<input type="hidden" name="action" value="record_payment">
+  <div class="modal-h"><h3>Record a payment</h3><button type="button" class="x" data-close>&times;</button></div>
+  <div class="modal-b">
+    <p class="small muted" style="margin-top:0">Money settles the oldest unpaid round first (late fees included); anything extra becomes credit for the next rounds.{% if plan.credit != "0.00" %} Current credit: {{ plan.credit|money }}.{% endif %}</p>
+    <div class="row-2">
+      <div class="field"><label>Method</label><select name="method">{% for v, l in methods %}<option value="{{ v }}">{{ l }}</option>{% endfor %}</select></div>
+      <div class="field"><label>Covers</label><select name="rounds" data-rounds>
+        {% for o in plan.options %}<option value="{{ o.rounds }}" data-amount="{{ o.amount|money }}">{{ o.rounds }} round{{ o.rounds|pluralize }} (R{{ o.from_round }}{% if o.to_round != o.from_round %}–R{{ o.to_round }}{% endif %})</option>{% endfor %}
+        <option value="" data-amount="">Custom amount…</option></select></div>
+    </div>
+    <div class="amount-preview" data-amount-preview></div>
+    <div class="field" data-amount-field><label>Amount received (ETB)</label><input type="number" name="amount" min="1" step="0.01" placeholder="e.g. 500"></div>
+    <div class="field"><label>Reference</label><input type="text" name="reference" maxlength="64" placeholder="Bank / mobile-money transaction ID (required for transfers)"></div>
+    <div class="field"><label>Note</label><input type="text" name="note" maxlength="200" placeholder="Optional"></div>
+    <label class="check-row"><input type="checkbox" name="notify" value="1" checked> Send the member a receipt notification</label>
+  </div>
+  <div class="modal-f"><button type="button" class="btn ghost" data-close>Cancel</button><button class="btn">Record payment</button></div>
+</form></dialog>
+{% endif %}
+
+<dialog class="modal" id="call-dialog"><form method="post">{% csrf_token %}<input type="hidden" name="action" value="log_call">
+  <div class="modal-h"><h3>Log a call with {{ m.user.first_name }}</h3><button type="button" class="x" data-close>&times;</button></div>
+  <div class="modal-b">
+    <p style="margin-top:0"><a class="btn ghost sm" href="tel:{{ m.user.phone }}">Call {{ m.user.phone }}</a> <span class="small muted">· owes {{ s.arrears|money }}</span></p>
+    <div class="field"><label>Outcome</label><select name="outcome">{% for v, l in outcomes %}<option value="{{ v }}">{{ l }}</option>{% endfor %}</select></div>
+    <div class="field" data-promise><label>Promised to pay by</label><input type="date" name="promised_date" min="{{ today|date:'Y-m-d' }}"></div>
+    <div class="field"><label>Feedback</label><textarea name="feedback" rows="3" placeholder="What did the member say?"></textarea></div>
+  </div>
+  <div class="modal-f"><button type="button" class="btn ghost" data-close>Cancel</button><button class="btn">Save call</button></div>
+</form></dialog>
+
+<dialog class="modal" id="block-dialog"><form method="post">{% csrf_token %}<input type="hidden" name="action" value="block">
+  <div class="modal-h"><h3>Hold out of draws</h3><button type="button" class="x" data-close>&times;</button></div>
+  <div class="modal-b"><p class="small muted" style="margin-top:0">For investigations (duplicate accounts, disputed payments). Payments continue as normal; the reason is recorded on every draw.</p>
+    <div class="field"><label>Until</label><input type="date" name="until" min="{{ today|date:'Y-m-d' }}" required></div>
+    <div class="field"><label>Reason</label><input type="text" name="reason" maxlength="200" required></div></div>
+  <div class="modal-f"><button type="button" class="btn ghost" data-close>Cancel</button><button class="btn">Hold out</button></div>
+</form></dialog>
+
+<dialog class="modal" id="terminate-dialog"><form method="post">{% csrf_token %}<input type="hidden" name="action" value="terminate">
+  <div class="modal-h"><h3>Terminate this place</h3><button type="button" class="x" data-close>&times;</button></div>
+  <div class="modal-b"><div class="note-box red" style="margin-bottom:12px">{{ m.user.full_name }} leaves {{ g.name }} and is no longer billed or entered in draws. Owed now: {{ s.arrears|money }}{% if m.has_won %} – <b>this member has already won</b>{% endif %}.</div>
+    <div class="field"><label>Reason</label><select name="reason">{% for v, l in reasons %}<option value="{{ v }}">{{ l }}</option>{% endfor %}</select></div>
+    <div class="field"><label>Note</label><textarea name="note" rows="3" placeholder="Internal note"></textarea></div>
+    <label class="check-row"><input type="checkbox" name="notify" value="1" checked> Notify the member</label></div>
+  <div class="modal-f"><button type="button" class="btn ghost" data-close>Cancel</button><button class="btn danger">Terminate</button></div>
+</form></dialog>
+
+<dialog class="modal" id="decline-dialog"><form method="post">{% csrf_token %}<input type="hidden" name="action" value="decline_exit">
+  <div class="modal-h"><h3>Decline the exit request</h3><button type="button" class="x" data-close>&times;</button></div>
+  <div class="modal-b"><div class="field"><label>Message to the member</label><textarea name="note" rows="3" placeholder="e.g. We'll call you to discuss a payment plan."></textarea></div></div>
+  <div class="modal-f"><button type="button" class="btn ghost" data-close>Cancel</button><button class="btn">Decline request</button></div>
+</form></dialog>
+
+<dialog class="modal" id="waive-dialog"><form method="post">{% csrf_token %}<input type="hidden" name="action" value="waive_fee"><input type="hidden" name="round_id">
+  <div class="modal-h"><h3>Waive late fee – <span data-text="round_label"></span></h3><button type="button" class="x" data-close>&times;</button></div>
+  <div class="modal-b"><div class="field"><label>Reason</label><input type="text" name="reason" maxlength="120" placeholder="e.g. Bank outage on the due date"></div></div>
+  <div class="modal-f"><button type="button" class="btn ghost" data-close>Cancel</button><button class="btn">Waive fee</button></div>
+</form></dialog>
+
+{% if payout and payout.status == 'ISSUED' %}
+<dialog class="modal" id="payout-dialog"><form method="post">{% csrf_token %}<input type="hidden" name="action" value="paid_out">
+  <div class="modal-h"><h3>Pay out {{ payout.amount|money }}</h3><button type="button" class="x" data-close>&times;</button></div>
+  <div class="modal-b"><p class="small muted" style="margin-top:0">Use this when the winner takes the payout as money instead of a booking credit.</p>
+    <div class="field"><label>Paid by</label><select name="method"><option>Cash</option><option>Bank transfer</option><option>telebirr</option></select></div>
+    <div class="field"><label>Reference</label><input type="text" name="reference" maxlength="64"></div></div>
+  <div class="modal-f"><button type="button" class="btn ghost" data-close>Cancel</button><button class="btn">Mark paid out</button></div>
+</form></dialog>
+{% endif %}
+{% endblock %}

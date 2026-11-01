@@ -1,0 +1,36 @@
+{% extends "console/base.html" %}{% load console_tags %}
+{% block title %}Payouts{% endblock %}{% block heading %}Winner payouts{% endblock %}{% block crumbs %}Equb{% endblock %}
+{% block content %}
+<div class="grid g-4">
+  <div class="card kpi dark"><div class="label">Paid to winners</div><div class="value">{{ agg.s|default:0|compact }} <small style="font-size:14px">ETB</small></div><div class="sub">{{ agg.n|default:0 }} payout{{ agg.n|pluralize }}</div></div>
+  <div class="card kpi gold"><div class="label">Not yet used</div><div class="value">{{ liability.issued_amount|compact }} <small style="font-size:14px">ETB</small></div><div class="sub">{{ liability.issued_count }} voucher{{ liability.issued_count|pluralize }} to redeem or pay out</div></div>
+  <div class="card kpi"><div class="label">Used on bookings</div><div class="value">{{ by_status|get_item:"REDEEMED"|default:0|compact }}</div><div class="sub">ETB redeemed as travel</div></div>
+  <div class="card kpi"><div class="label">Service fees</div><div class="value">{{ agg.fee|default:0|compact }}</div><div class="sub">ETB kept from {{ agg.gross|default:0|compact }} gross pots</div></div>
+</div>
+<div class="card mt">
+  <div class="card-h"><h2>Payouts</h2>
+    <div class="chips"><a class="chip {% if not status %}on{% endif %}" href="?">All</a>{% for v, l in statuses %}<a class="chip {% if status == v %}on{% endif %}" href="?status={{ v }}">{{ l|truncatechars:22 }}</a>{% endfor %}</div></div>
+  <div class="table-wrap"><table class="t"><thead><tr><th>Date</th><th>Winner</th><th>Pool</th><th>Voucher</th><th>Status</th><th>Used / paid</th><th class="r">Amount</th><th></th></tr></thead><tbody>
+  {% for p in page %}<tr>
+    <td class="small">{{ p.created_at|date:"d M Y" }}</td>
+    <td><a class="strong" href="{% url 'console:equb_member' p.membership_id %}">{{ p.membership.user.full_name }}</a><div class="small">{{ p.membership.user.phone|tel }}</div></td>
+    <td class="small">{{ p.round.group.name }}<div class="muted">Round {{ p.round.number }}</div></td><td class="mono">{{ p.voucher_code }}</td><td>{{ p.status|status_badge }}</td>
+    <td class="small">{% if p.booking %}<a href="{% url 'console:booking' p.booking.reference %}">{{ p.booking.reference }}</a> · {{ p.redeemed_at|date:"d M" }}{% elif p.paid_out_at %}{{ p.paid_out_method }} {{ p.paid_out_reference }} · {{ p.paid_out_at|date:"d M" }}<div class="muted">by {{ p.paid_out_by.full_name|default:"staff" }}</div>{% else %}—{% endif %}</td>
+    <td class="r num strong">{{ p.amount|money }}<div class="small muted">fee {{ p.fee_amount|money }}</div></td>
+    <td class="r">{% if p.status == 'ISSUED' %}<button class="btn ghost sm" data-open="payout-dialog" data-fill='{"payout":"{{ p.pk }}","who":"{{ p.membership.user.full_name|escapejs }}","amount":"{{ p.amount|money }}"}'>Pay out</button>{% endif %}</td></tr>
+  {% empty %}<tr><td colspan="8" class="empty">No payouts yet.</td></tr>{% endfor %}</tbody></table></div>
+  {% include "console/_pagination.html" %}
+</div>
+{% if refund.count %}<div class="card mt"><div class="card-h"><h2>Credit to refund</h2><span>{{ refund.amount|money }} on finished or closed places</span></div>
+  <div class="table-wrap"><table class="t"><thead><tr><th>Member</th><th>Pool</th><th class="r">Credit</th><th></th></tr></thead><tbody>
+  {% for m in refund.rows %}<tr><td>{{ m.user.full_name }}<div class="small">{{ m.user.phone|tel }}</div></td><td>{{ m.group.name }}</td><td class="r num strong">{{ m.prepaid_credit|money }}</td><td class="r"><a class="btn ghost sm" href="{% url 'console:equb_member' m.pk %}">Open</a></td></tr>{% endfor %}
+  </tbody></table></div></div>{% endif %}
+
+<dialog class="modal" id="payout-dialog"><form method="post">{% csrf_token %}<input type="hidden" name="payout"><input type="hidden" name="next" value="{{ request.get_full_path }}">
+  <div class="modal-h"><h3>Pay out <span data-text="amount"></span> to <span data-text="who"></span></h3><button type="button" class="x" data-close>&times;</button></div>
+  <div class="modal-b"><p class="small muted" style="margin-top:0">For winners who take the payout as money instead of a travel booking. The voucher can no longer be redeemed afterwards.</p>
+    <div class="field"><label>Paid by</label><select name="method"><option>Cash</option><option>Bank transfer</option><option>telebirr</option></select></div>
+    <div class="field"><label>Reference</label><input type="text" name="reference" maxlength="64"></div></div>
+  <div class="modal-f"><button type="button" class="btn ghost" data-close>Cancel</button><button class="btn">Mark paid out</button></div>
+</form></dialog>
+{% endblock %}
