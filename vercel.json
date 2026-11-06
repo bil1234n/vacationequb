@@ -4,7 +4,10 @@
     {
       "src": "vacation/wsgi.py",
       "use": "@vercel/python",
-      "config": { "maxLambdaSize": "15mb", "runtime": "python3.11" }
+      "config": {
+        "maxLambdaSize": "15mb",
+        "runtime": "python3.11"
+      }
     }
   ],
   "routes": [
@@ -13,8 +16,13 @@
       "dest": "/static/$1"
     },
     {
-      "src": "(.*)",
+      "src": "/(.*)",
       "dest": "vacation/wsgi.py"
     }
-  ]
+  ],
+  "build": {
+    "env": {
+      "ENABLE_COLLECTSTATIC": "1"
+    }
+  }
 }
