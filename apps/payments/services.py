@@ -22,16 +22,29 @@ Status = PaymentTransaction.Status
 
 def _urls(txn):
     base = public_base_url()
-    return {
-        "notify_url": f"{base}/api/payments/webhooks/{txn.provider}/",
-        "return_url": f"{base}/api/payments/return/{txn.reference}/",
-    }
+    # Chapa calls callback_url with an unsigned GET; its signed POST webhook is set in the Chapa dashboard.
+    notify = (f"{base}/api/payments/chapa/callback/" if txn.provider == "chapa"
+              else f"{base}/api/payments/webhooks/{txn.provider}/")
+    return {"notify_url": notify, "return_url": f"{base}/api/payments/return/{txn.reference}/"}
+
+
+def _attach_agency(txn: PaymentTransaction, target) -> None:
+    """Mark agency sales so Chapa splits them and the commission is recorded."""
+    from apps.agencies.services import agency_for_payment
+
+    agency = agency_for_payment(target, txn.user)
+    if agency is None:
+        return
+    txn.agency = agency
+    txn.platform_fee = agency.commission_on(txn.amount)
+    # Chapa pays the agency's share straight to its bank when it has a subaccount.
+    txn.split_settled = txn.provider == "chapa" and agency.has_split
 
 
 def initiate_payment(*, user, target, amount: Decimal, purpose: str, provider: str | None = None,
                      payer_phone: str = "") -> PaymentTransaction:
     """Create a transaction for ``target`` and obtain a checkout URL from the provider."""
-    provider = provider or settings.RIHLA["DEFAULT_PAYMENT_PROVIDER"]
+    provider = provider or settings.VACATION["DEFAULT_PAYMENT_PROVIDER"]
     amount = Decimal(amount).quantize(Decimal("0.01"))
     if amount <= 0:
         raise BusinessRuleError("Payment amount must be positive.")
@@ -49,10 +62,12 @@ def initiate_payment(*, user, target, amount: Decimal, purpose: str, provider: s
     if existing:
         return existing
 
-    txn = PaymentTransaction.objects.create(
-        user=user, provider=provider, purpose=purpose, amount=amount, currency=settings.RIHLA["CURRENCY"],
+    txn = PaymentTransaction(
+        user=user, provider=provider, purpose=purpose, amount=amount, currency=settings.VACATION["CURRENCY"],
         content_type=ct, object_id=target.pk, payer_phone=payer_phone or user.phone,
     )
+    _attach_agency(txn, target)
+    txn.save()
     try:
         result = gateway.initiate(txn, **_urls(txn))
     except GatewayError as exc:
@@ -75,8 +90,12 @@ def apply_status(txn_id: int, new_status: str, *, provider_reference: str = "", 
     """Move a transaction to a new status and run fulfilment exactly once."""
     with transaction.atomic():
         txn = PaymentTransaction.objects.select_for_update().get(pk=txn_id)
-        if txn.is_final:
+        late_success = (new_status == Status.SUCCESS and txn.status in (Status.CANCELLED, Status.EXPIRED)
+                        and txn.purpose == PaymentTransaction.Purpose.EQUB_CONTRIBUTION)
+        if txn.is_final and not late_success:
             return txn  # idempotent: duplicates/late webhooks are ignored
+        # A member who cancelled (or let time out) an Equb payment but still finished it on Chapa: the money
+        # arrived, so it is credited instead of being lost.
         if new_status == Status.SUCCESS and amount is not None and Decimal(amount) < txn.amount:
             new_status, reason = Status.FAILED, f"Amount mismatch: paid {amount}, expected {txn.amount}"
         txn.status = new_status
@@ -97,6 +116,10 @@ def apply_status(txn_id: int, new_status: str, *, provider_reference: str = "", 
             txn.save(update_fields=["fulfilled", "updated_at"])
         elif handler and handler.on_failure and txn.is_final and new_status != Status.SUCCESS:
             handler.on_failure(txn)
+        if new_status == Status.SUCCESS and txn.agency_id:
+            from apps.agencies.services import record_commission
+
+            record_commission(txn)
     return txn
 
 

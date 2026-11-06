@@ -1,0 +1,31 @@
+{% extends "agencies/base.html" %}{% load console_tags %}
+{% block title %}Join {{ g.name }}{% endblock %}{% block heading %}Add a member to {{ g.name }}{% endblock %}
+{% block crumbs %}<a href="{% url 'agency:equbs' %}">Equb</a> / {{ g.contribution_amount|money }} {{ g.frequency_days|every }}{% endblock %}
+{% block content %}
+<form method="post" class="form-page">{% csrf_token %}
+  <section class="card form-section">
+    <div class="form-section-h"><h2>Who gets the place?</h2><p class="muted">The customer pays every contribution – for themselves or for a family member (a “responsibility person”).</p></div>
+    {% if customers %}
+    <div class="form-grid">
+      <div class="field"><label for="customer">Customer</label>
+        <select id="customer" name="customer" required onchange="document.querySelectorAll('[data-fam]').forEach(e=>e.hidden=e.dataset.fam!==this.value)">
+          <option value="">— choose —</option>
+          {% for c in customers %}<option value="{{ c.pk }}" {% if pre == c.pk|stringformat:"s" %}selected{% endif %}>{{ c.user.full_name }} · {{ c.user.phone }}</option>{% endfor %}
+        </select></div>
+      <div class="field wide"><label>Place for</label>
+        <label class="check-row"><input type="radio" name="who" value="self" checked> The customer themselves</label>
+        {% for c in customers %}{% for fm in c.family.all %}
+          <label class="check-row" data-fam="{{ c.pk }}" {% if pre != c.pk|stringformat:"s" %}hidden{% endif %}><input type="radio" name="who" value="{{ fm.pk }}"> {{ fm.full_name }} <span class="small muted">({{ fm.get_relation_display }})</span></label>
+        {% endfor %}{% endfor %}
+      </div>
+    </div>
+    {% else %}<div class="empty">Add a customer first. <a href="{% url 'agency:customer_add' %}">New customer →</a></div>{% endif %}
+  </section>
+  <section class="card form-section"><dl class="kv">
+    <dt>Contribution</dt><dd>{{ g.contribution_amount|money }} {{ g.frequency_days|every }}</dd>
+    <dt>Places</dt><dd>{{ g.members_count }} of {{ g.max_members }} taken</dd>
+    <dt>Each winner receives</dt><dd>about {{ g.payout_per_winner|money }}</dd>
+    <dt>Starts</dt><dd>{{ g.start_date|date:"d M Y" }}</dd></dl></section>
+  <div class="form-actions"><span class="grow"></span><a class="btn ghost" href="{% url 'agency:equbs' %}">Cancel</a><button class="btn" type="submit" {% if not customers %}disabled{% endif %}>Give the place</button></div>
+</form>
+{% endblock %}

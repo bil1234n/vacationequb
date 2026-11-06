@@ -1,12 +1,12 @@
 {% load static %}<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sign in · Rihla Travel console</title>
+<title>Sign in · Vacation Equb console</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="{% static 'console/console.css' %}"></head>
 <body>
 <div class="login-page">
   <section class="login-side">
-    <div class="brand" style="padding:0"><div class="brand-mark">R</div><div><b>Rihla Travel</b><small>ሪሕላ · Staff console</small></div></div>
+    <div class="brand" style="padding:0"><div class="brand-mark">VE</div><div><b>Vacation Equb</b><small>ቬኬሽን ዕቁብ · Staff console</small></div></div>
     <div>
       <h1>Run every trip, pool and draw from one place.</h1>
       <p>Live revenue, seat inventory, Equb collections and Sadaqah crowdfunding and free giveaways — with provably-fair draws you can run and verify in one click.</p>
@@ -21,7 +21,7 @@
   <section class="login-form">
     <form method="post">{% csrf_token %}
       <h2>Sign in</h2>
-      <p class="muted" style="margin:0 0 24px">Use your Rihla staff phone number and password.</p>
+      <p class="muted" style="margin:0 0 24px">Vacation Equb staff and travel agency partners sign in here with their phone number and password.</p>
       {% for m in messages %}<div class="msg {{ m.tags }}">{{ m }}</div>{% endfor %}
       {% if error %}<div class="msg error">{{ error }}</div>{% endif %}
       <div class="field"><label for="phone">Phone number</label><input id="phone" type="text" name="phone" value="{{ phone }}" placeholder="+2519XXXXXXXX" autocomplete="username" required autofocus></div>

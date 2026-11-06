@@ -1,0 +1,22 @@
+{% extends "agencies/base.html" %}{% load console_tags %}
+{% block title %}Earnings{% endblock %}{% block heading %}Earnings{% endblock %}{% block crumbs %}Every sale, the platform fee and your share{% endblock %}
+{% block content %}
+<div class="grid g-4">
+  <div class="card kpi dark"><div class="label">Total sales</div><div class="value">{{ total.gross|compact }} <small style="font-size:14px">ETB</small></div><div class="sub">{{ total.sales }} sale{{ total.sales|pluralize }}</div></div>
+  <div class="card kpi"><div class="label">Platform fee</div><div class="value">{{ total.commission|compact }} <small style="font-size:14px">ETB</small></div><div class="sub">{{ agency.commission_percent|floatformat:"-2" }}% to Vacation Equb</div></div>
+  <div class="card kpi"><div class="label">Your share</div><div class="value">{{ total.share|compact }} <small style="font-size:14px">ETB</small></div><div class="sub">&nbsp;</div></div>
+  <div class="card kpi gold"><div class="label">Still owed to you</div><div class="value">{{ total.owed|compact }} <small style="font-size:14px">ETB</small></div><div class="sub">Vacation Equb pays this out</div></div>
+</div>
+<div class="note-box mt">{% if agency.chapa_subaccount_id %}Sales paid online are split by Chapa: your share goes straight to {{ agency.bank_name|default:"your bank" }} ({{ agency.account_number }}). {% endif %}Sales paid with an Equb payout or a prize are paid to you by Vacation Equb.</div>
+<form class="toolbar mt" method="get"><div class="chips">
+  <a class="chip {% if not payout %}on{% endif %}" href="{% qs payout=None page=None %}">All</a>
+  {% for v, l in payouts %}<a class="chip {% if payout == v %}on{% endif %}" href="{% qs payout=v page=None %}">{{ l }}</a>{% endfor %}</div></form>
+<div class="card"><div class="table-wrap"><table class="t">
+  <thead><tr><th>Date</th><th>Customer</th><th>Sale</th><th class="r">Amount</th><th class="r">Fee</th><th class="r">Your share</th><th>Payout</th></tr></thead>
+  <tbody>{% for e in page %}<tr><td class="small">{{ e.created_at|date:"d M Y" }}</td><td>{{ e.customer.full_name }}</td>
+    <td>{% if e.booking %}<a class="mono" href="{% url 'agency:booking' e.booking.reference %}">{{ e.booking.reference }}</a>{% endif %}<div class="small muted">{{ e.get_kind_display }}</div></td>
+    <td class="r num">{{ e.gross_amount|money }}</td><td class="r num">{{ e.commission|money }}</td><td class="r num strong">{{ e.agency_amount|money }}</td>
+    <td>{% include "agencies/_payout.html" with s=e.payout_status label=e.get_payout_status_display %}{% if e.paid_reference %}<div class="small muted mono">{{ e.paid_reference }}</div>{% endif %}</td></tr>
+  {% empty %}<tr><td colspan="7" class="empty">No sales yet.</td></tr>{% endfor %}</tbody>
+</table></div>{% include "console/_pagination.html" %}</div>
+{% endblock %}

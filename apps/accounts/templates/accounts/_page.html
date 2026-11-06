@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{% block title %}{% endblock %} · Vacation Equb</title>
+<style>
+:root{--g:#0F382B;--g2:#1B4D3E;--gold:#C9A227;--soft:#E7F0EC;--line:#E1EAE5;--muted:#5B6F66;--red:#C0392B}
+*{box-sizing:border-box}
+body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:#fff;color:#0D1F18;line-height:1.6}
+header{background:var(--g);color:#fff;padding:36px 16px 44px;border-radius:0 0 24px 24px}
+.wrap{max-width:760px;margin:0 auto;padding:0 16px}
+header small{letter-spacing:.15em;opacity:.75;text-transform:uppercase;font-size:12px}
+header h1{font-size:28px;margin:6px 0 4px;line-height:1.25}
+header p{opacity:.85;margin:0}
+main{padding:28px 0 48px}
+h2{font-size:19px;color:var(--g);margin:28px 0 8px}
+p,li{font-size:15.5px}
+ul{padding-left:20px}
+a{color:var(--g2)}
+.card{border:1px solid var(--line);border-radius:16px;padding:20px;box-shadow:0 4px 14px rgba(15,56,43,.06)}
+label{display:block;font-weight:600;font-size:14px;margin:14px 0 6px}
+input[type=text],input[type=password],textarea{width:100%;padding:12px 14px;border:1.5px solid #D6E0DA;border-radius:12px;font:inherit;font-size:16px}
+input:focus,textarea:focus{outline:none;border-color:var(--g2)}
+.check{display:flex;gap:10px;align-items:flex-start;font-weight:500;margin-top:16px}
+.check input{margin-top:5px}
+button{margin-top:18px;width:100%;background:var(--red);color:#fff;border:0;border-radius:12px;padding:14px;font:inherit;font-weight:700;font-size:16px;cursor:pointer}
+.errors{background:#FDF1EF;border:1px solid rgba(192,57,43,.25);color:var(--red);border-radius:12px;padding:10px 14px;font-size:14px}
+.ok{background:var(--soft);border-radius:16px;padding:20px}
+.muted{color:var(--muted);font-size:14px}
+footer{border-top:1px solid var(--line);padding:20px 0 32px;color:var(--muted);font-size:13px}
+</style>
+</head>
+<body>
+<header><div class="wrap"><small>ቬኬሽን ዕቁብ · Vacation Equb</small><h1>{% block heading %}{% endblock %}</h1>{% block sub %}{% endblock %}</div></header>
+<main class="wrap">{% block content %}{% endblock %}</main>
+<footer class="wrap">© {{ year }} {{ company }} · <a href="/privacy/">Privacy policy</a> · <a href="/account/delete/">Delete my account</a> · <a href="mailto:{{ support_email }}">{{ support_email }}</a></footer>
+</body>
+</html>

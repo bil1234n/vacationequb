@@ -336,7 +336,7 @@ class DrawSelectionAndGroupEqubTests(TestCase):
         self.staff = make_user("Ops", staff=True)
         self.group = make_equb(
             name="Pick Test", destination="UMRAH", contribution_amount=Decimal("1000"), frequency_days=10,
-            duration_value=30, duration_unit="DAYS", max_members=3, min_members_to_start=3,
+            duration_value=3, duration_unit="DAYS", max_members=3, min_members_to_start=3,
             start_date=timezone.localdate(), service_fee_percent=Decimal("0"), draw_type="MANUAL")
         self.users = [make_user(f"Picker {i}") for i in range(3)]
         self.ms = [services.join_group(u, self.group) for u in self.users]  # third join starts it
@@ -349,7 +349,7 @@ class DrawSelectionAndGroupEqubTests(TestCase):
                          [timedelta(days=0), timedelta(days=10), timedelta(days=20)])
         self.assertEqual((self.group.frequency, self.group.get_frequency_display(), self.group.every),
                          ("CUSTOM", "Every 10 days", "every 10 days"))
-        self.assertEqual(self.group.end_date, self.group.start_date + timedelta(days=30))
+        self.assertEqual(self.group.end_date, self.group.start_date + timedelta(days=3))
 
     def test_staff_select_winner(self):
         for m in self.ms[:2]:
@@ -485,3 +485,281 @@ class GroupEqubInviteTests(TestCase):
         oapi.post(f"/api/equb/group-invites/{oid}/decline/")
         self.assertEqual(GroupEqubInvite.objects.get(pk=oid).status, "DECLINED")
         self.assertEqual(api.get(f"/api/equb/group-equbs/{tid}/").data["members_count"], 2)
+
+
+class RoundsDrawnCalendarPayPrivacyTests(TestCase):
+    def setUp(self):
+        self.user = make_user("Liya Haile")
+        self.other = make_user("Abel Kebede")
+        self.g = make_equb(name="Test – Group", contribution_amount=Decimal("1"), frequency_days=3, max_members=4, rounds_drawn=4,
+                           start_date=timezone.localdate() + timedelta(days=7))
+        services.join_group(self.user, self.g)
+
+    def test_rounds_drawn_sets_the_number_of_rounds_and_can_be_edited_while_running(self):
+        services.start_group(self.g)
+        self.g.refresh_from_db()
+        self.assertEqual(self.g.rounds.count(), 4)  # one round per member place, not just one per joined member
+        self.g.rounds_drawn = 2
+        self.g.save()
+        services.sync_running_group(self.g)
+        self.assertEqual(self.g.rounds.count(), 2)
+        self.assertEqual(self.g.total_rounds, 2)
+        self.g.rounds_drawn = 4
+        self.g.save()
+        services.sync_running_group(self.g)
+        self.assertEqual(sorted(self.g.rounds.values_list("number", flat=True)), [1, 2, 3, 4])
+
+    def test_starting_again_never_duplicates_round_numbers(self):
+        services.start_group(self.g)
+        EqubGroup.objects.filter(pk=self.g.pk).update(status=EqubGroup.Status.OPEN)  # staff set it back to "Open"
+        services.start_group(self.g)  # used to crash with uniq_round_number
+        self.g.refresh_from_db()
+        self.assertEqual(self.g.status, EqubGroup.Status.ACTIVE)
+        self.assertEqual(self.g.rounds.filter(number=1).count(), 1)
+
+    def test_console_edit_saves_rounds_drawn_and_reschedules(self):
+        staff = make_user("Staff", staff=True)
+        services.start_group(self.g)
+        self.client.force_login(staff)
+        self.g.refresh_from_db()
+        data = {"equb_package": "", "name": self.g.name, "contribution_amount": "1", "frequency_days": "3",
+                "duration_value": "3", "duration_unit": "DAYS", "max_members": "4", "rounds_drawn": "3",
+                "start_date": self.g.start_date.isoformat(), "end_date": "", "status": "ACTIVE", "draw_type": "MANUAL",
+                "rules_text": "Pay on time\n2. Be kind"}
+        from apps.equb.models import EqubPackage
+        pkg = EqubPackage.objects.create(name="Test")
+        data["equb_package"] = pkg.pk
+        r = self.client.post(f"/console/equb/{self.g.slug}/edit/", data)
+        self.assertEqual(r.status_code, 302, getattr(r, "context", {}) and r.context["form"].errors)
+        self.g.refresh_from_db()
+        self.assertEqual(self.g.rounds_drawn, 3)
+        self.assertEqual(self.g.rounds.count(), 3)
+        detail = client_for(self.user).get(f"/api/equb/groups/{self.g.slug}/").data
+        self.assertEqual(detail["terms_content"], ["Pay on time", "Be kind"])
+
+    def test_not_started_join_only_started_join_and_pay(self):
+        api = client_for(self.other)
+        self.assertEqual(api.post(f"/api/equb/groups/{self.g.slug}/join/").status_code, 201)
+        m = EqubMembership.objects.get(group=self.g, user=self.other)
+        self.assertFalse(api.get(f"/api/equb/memberships/{m.id}/pay-options/").data["payable"])
+        services.start_group(self.g)
+        late = make_user("Late Joiner")
+        self.assertEqual(client_for(late).post(f"/api/equb/groups/{self.g.slug}/join/").status_code, 201)
+        self.assertTrue(api.get(f"/api/equb/memberships/{m.id}/pay-options/").data["payable"])
+
+    def test_ledger_and_winners_hide_other_members_names(self):
+        services.join_group(self.other, self.g)
+        services.start_group(self.g)
+        rows = client_for(self.user).get(f"/api/equb/groups/{self.g.slug}/ledger/").data["members"]
+        names = {r["name"] for r in rows}
+        self.assertIn("Liya Haile (you)", names)
+        self.assertIn("Member 2", names)
+        self.assertNotIn("Abel Kebede", " ".join(names))
+        self.assertTrue(all(r["phone_masked"] == "" for r in rows))
+
+    def test_calendar_pay_sends_a_bill_at_the_chosen_time(self):
+        from . import scheduled
+        from .models import ScheduledPayment
+
+        services.start_group(self.g)
+        m = EqubMembership.objects.get(group=self.g, user=self.user)
+        api = client_for(self.user)
+        when = timezone.now() + timedelta(days=2)
+        r = api.post("/api/equb/scheduled-payments/", {"membership": m.id, "scheduled_for": when.isoformat(), "rounds": 2,
+                                                       "repeat": "ONCE"}, format="json")
+        self.assertEqual(r.status_code, 201, r.data)
+        self.assertEqual(r.data["status"], "SCHEDULED")
+        self.assertEqual(scheduled.dispatch_due(), 0)  # not yet
+        self.assertEqual(scheduled.dispatch_due(now=when + timedelta(minutes=1)), 1)
+        sp = ScheduledPayment.objects.get(pk=r.data["id"])
+        self.assertEqual(sp.status, "SENT")
+        self.assertEqual(sp.amount, Decimal("2.00"))
+        self.assertTrue(sp.transaction.checkout_url)
+        self.assertTrue(Notification.objects.filter(user=self.user, data__scheduled_payment=sp.id,
+                                                    data__checkout_url=sp.transaction.checkout_url).exists())
+        self.assertEqual(checkout(sp.transaction.reference).data["status"], "SUCCESS")
+        rows = api.get(f"/api/equb/scheduled-payments/?membership={m.id}").data
+        self.assertEqual(rows[0]["status"], "PAID")
+
+    def test_calendar_pay_rules(self):
+        m = EqubMembership.objects.get(group=self.g, user=self.user)
+        api = client_for(self.user)
+        too_soon = api.post("/api/equb/scheduled-payments/", {"membership": m.id,
+                            "scheduled_for": (timezone.now() + timedelta(seconds=30)).isoformat()}, format="json")
+        self.assertEqual(too_soon.status_code, 409)
+        before_start = api.post("/api/equb/scheduled-payments/", {"membership": m.id,
+                                "scheduled_for": (timezone.now() + timedelta(days=1)).isoformat()}, format="json")
+        self.assertEqual(before_start.status_code, 409)  # the Equb hasn't started by then
+        ok = api.post("/api/equb/scheduled-payments/", {"membership": m.id, "repeat": "EVERY_DUE",
+                      "scheduled_for": (timezone.now() + timedelta(days=8)).isoformat()}, format="json")
+        self.assertEqual(ok.status_code, 201, ok.data)
+        other = client_for(self.other).post(f"/api/equb/scheduled-payments/{ok.data['id']}/cancel/")
+        self.assertEqual(other.status_code, 404)
+        self.assertEqual(api.post(f"/api/equb/scheduled-payments/{ok.data['id']}/cancel/").data["status"], "CANCELLED")
+
+
+class PaymentRoundsRejoinPendingTests(TestCase):
+    def setUp(self):
+        self.user = make_user("Liya Haile")
+        self.g = make_equb(name="Pay all", contribution_amount=Decimal("10"), frequency_days=3, max_members=2,
+                           duration_value=4, duration_unit="DAYS", rounds_drawn=2,
+                           start_date=timezone.localdate(), require_paid_to_draw=False)
+        rules = EqubSettings.load()
+        rules.min_paid_rounds_to_win = 0
+        rules.save()
+        services.join_group(self.user, self.g)
+
+    def test_still_to_pay_is_price_per_person_and_winners_keep_paying(self):
+        m = EqubMembership.objects.get(group=self.g, user=self.user)
+        self.assertEqual(self.g.price_per_person, Decimal("40"))  # 10 × 4
+        self.assertEqual(st.standing_for(m).remaining_amount, Decimal("40"))
+        services.start_group(self.g)
+        self.g.refresh_from_db()
+        self.assertEqual(self.g.rounds.count(), 4)  # 4 payments although only 2 draws
+        services.run_draw(self.g.rounds.get(number=1))
+        m.refresh_from_db()
+        self.assertTrue(m.has_won)
+        self.g.refresh_from_db()
+        self.assertEqual(self.g.status, "ACTIVE")  # not completed: the winner still owes rounds 2-4
+        self.assertEqual(self.g.current_round, 2)
+        self.assertEqual(services.run_draw(self.g.rounds.get(number=2)), [])  # payment-only round closes
+        self.g.refresh_from_db()
+        self.assertEqual(self.g.current_round, 3)
+        self.assertTrue(Contribution.objects.filter(membership=m, round__number=3).exists())
+
+    def test_rounds_drawn_cannot_exceed_duration(self):
+        from apps.console.forms import EqubForm
+        form = EqubForm(instance=self.g, data={"name": "x", "contribution_amount": "10", "frequency_days": "3",
+                                               "duration_value": "3", "duration_unit": "DAYS", "max_members": "8",
+                                               "rounds_drawn": "5", "start_date": self.g.start_date.isoformat(),
+                                               "status": "OPEN", "draw_type": "MANUAL"})
+        self.assertFalse(form.is_valid())
+        self.assertIn("rounds_drawn", form.errors)
+
+    def test_removed_member_requests_rejoin_and_staff_approve(self):
+        staff = make_user("Staff", staff=True)
+        services.start_group(self.g)
+        m = EqubMembership.objects.get(group=self.g, user=self.user)
+        operations.terminate(m, staff, reason="MEMBER_REQUEST")
+        api = client_for(self.user)
+        r = api.post(f"/api/equb/groups/{self.g.slug}/join/")
+        self.assertEqual(r.status_code, 409)
+        detail = api.get(f"/api/equb/groups/{self.g.slug}/").data
+        self.assertTrue(detail["rejoin"]["needs_approval"])
+        self.assertTrue(detail["rejoin"]["can_request"])
+        r = api.post(f"/api/equb/groups/{self.g.slug}/request-join/", {"message": "I can pay now"}, format="json")
+        self.assertEqual(r.status_code, 201, r.data)
+        self.assertEqual(r.data["rejoin"]["request"]["status"], "PENDING")
+        self.assertEqual(api.post(f"/api/equb/groups/{self.g.slug}/request-join/").status_code, 409)  # only one pending
+        from .models import JoinRequest
+        self.client.force_login(staff)
+        req = JoinRequest.objects.get()
+        r = self.client.post("/console/equb/terminations/", {"action": "approve_rejoin", "join_request": req.pk}, follow=True)
+        self.assertContains(r, "is back in the Equb")
+        m.refresh_from_db()
+        self.assertEqual(m.status, "ACTIVE")
+        self.assertTrue(api.get(f"/api/equb/memberships/{m.id}/pay-options/").data["payable"])
+
+    def test_member_cancels_pending_payment_and_late_success_is_still_credited(self):
+        services.start_group(self.g)
+        m = EqubMembership.objects.get(group=self.g, user=self.user)
+        api = client_for(self.user)
+        r = api.post(f"/api/equb/memberships/{m.id}/pay/", {"rounds": 1, "provider": "mock"}, format="json")
+        self.assertEqual(r.status_code, 201, r.data)
+        record = EqubPayment.objects.get(membership=m)
+        r = api.post(f"/api/equb/memberships/{m.id}/cancel-payment/", {"payment_id": record.id}, format="json")
+        self.assertEqual(r.data["status"], "CANCELLED")
+        txn = PaymentTransaction.objects.get(pk=record.transaction_id)
+        self.assertEqual(txn.status, "CANCELLED")
+        # The member had actually finished paying on the provider page: the money is credited, not lost.
+        from apps.payments.services import apply_status
+        apply_status(txn.pk, "SUCCESS", amount=txn.amount)
+        record.refresh_from_db()
+        self.assertEqual(record.status, "PAID")
+
+    def test_unpaid_payments_expire_after_the_configured_minutes(self):
+        s = EqubSettings.load()
+        s.pending_payment_minutes = 2
+        s.save()
+        services.start_group(self.g)
+        m = EqubMembership.objects.get(group=self.g, user=self.user)
+        client_for(self.user).post(f"/api/equb/memberships/{m.id}/pay/", {"rounds": 1, "provider": "mock"}, format="json")
+        record = EqubPayment.objects.get(membership=m)
+        self.assertEqual(services.expire_pending_payments(), 0)  # still fresh
+        EqubPayment.objects.filter(pk=record.pk).update(created_at=timezone.now() - timedelta(minutes=3))
+        self.assertEqual(services.expire_pending_payments(), 1)
+        record.refresh_from_db()
+        self.assertEqual(record.status, "CANCELLED")
+
+
+class AppContentTests(TestCase):
+    def test_update_popup_normal_and_forced(self):
+        from apps.core.models import AppRelease
+        api = APIClient()
+        self.assertFalse(api.get("/api/app/version/?platform=android&version=1.0.0").data["update_available"])
+        AppRelease.objects.create(platform="android", version="1.2.0", kind="NORMAL", min_supported_version="1.1.0")
+        r = api.get("/api/app/version/?platform=android&version=1.1.5").data
+        self.assertTrue(r["update_available"]); self.assertFalse(r["force"])
+        self.assertTrue(api.get("/api/app/version/?platform=android&version=1.0.9").data["force"])
+        self.assertFalse(api.get("/api/app/version/?platform=android&version=1.2.0").data["update_available"])
+        self.assertFalse(api.get("/api/app/version/?platform=ios&version=1.0.0").data["update_available"])
+
+    def test_banners_in_dashboard_and_console(self):
+        import tempfile
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from django.test import override_settings
+        from PIL import Image
+        import io
+        buf = io.BytesIO(); Image.new("RGB", (120, 52), "green").save(buf, "PNG")
+        staff = make_user("Staff", staff=True)
+        self.client.force_login(staff)
+        with override_settings(MEDIA_ROOT=tempfile.mkdtemp()):
+            r = self.client.post("/console/app/banners/new/", {
+                "image": SimpleUploadedFile("b.png", buf.getvalue(), content_type="image/png"), "title": "Umrah 1448",
+                "link_type": "EQUB", "sort_order": 0, "is_active": "on"})
+            self.assertEqual(r.status_code, 302, getattr(r, "context", None) and r.context["form"].errors)
+            self.assertEqual(self.client.get("/console/app/").status_code, 200)
+            data = APIClient().get("/api/home/dashboard/").data
+            self.assertEqual(data["banners"][0]["title"], "Umrah 1448")
+            self.assertTrue(data["banners"][0]["image"].startswith("http"))
+
+
+class FollowUpFixesTests(TestCase):
+    def setUp(self):
+        self.user = make_user("Liya Haile")
+        self.g = make_equb(name="Short", contribution_amount=Decimal("1"), frequency_days=3, max_members=2,
+                           duration_value=2, duration_unit="DAYS", start_date=timezone.localdate())
+        services.join_group(self.user, self.g)
+
+    def test_group_service_fee_overrides_the_rules(self):
+        self.assertEqual(self.g.service_fee_percent, EqubSettings.load().service_fee_percent)
+        self.g.service_fee_override = Decimal("5")
+        self.g.save()
+        self.assertEqual(EqubGroup.objects.get(pk=self.g.pk).service_fee_percent, Decimal("5"))
+
+    def test_equb_that_ended_early_reopens_so_members_pay_the_rest(self):
+        services.start_group(self.g)
+        # Simulate the old behaviour: finished after one round although the price per person is 2 payments.
+        self.g.rounds.exclude(number=1).delete()
+        self.g.rounds.filter(number=1).update(status="DRAWN")
+        EqubGroup.objects.filter(pk=self.g.pk).update(status="COMPLETED")
+        m = EqubMembership.objects.get(group=self.g, user=self.user)
+        data = client_for(self.user).get(f"/api/equb/memberships/{m.id}/").data
+        self.assertEqual(data["group"]["status"], "ACTIVE")
+        self.assertEqual(data["group"]["price_per_person"], "2.00")
+        self.assertTrue(client_for(self.user).get(f"/api/equb/memberships/{m.id}/pay-options/").data["payable"])
+
+    def test_cancelled_member_sees_rejoin_on_their_place(self):
+        staff = make_user("Staff", staff=True)
+        services.start_group(self.g)
+        m = EqubMembership.objects.get(group=self.g, user=self.user)
+        operations.terminate(m, staff, reason="MEMBER_REQUEST")
+        data = client_for(self.user).get(f"/api/equb/memberships/{m.id}/").data
+        self.assertTrue(data["rejoin"]["can_request"])
+
+    def test_sidebar_badges_match_pages(self):
+        from apps.console.templatetags.console_tags import bust_equb_counts, equb_counts
+        bust_equb_counts()
+        counts = equb_counts()
+        self.assertEqual(counts["uncalled"], 0)
+        self.assertEqual(counts["terminations"], 0)

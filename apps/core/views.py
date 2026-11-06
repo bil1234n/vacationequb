@@ -50,6 +50,7 @@ class DashboardView(APIView):
             "live_campaigns": CrowdfundingCampaignSerializer(
                 CrowdfundingCampaign.objects.live().order_by("-is_featured", "-starts_at")[:3], many=True, context=ctx
             ).data,
+            "banners": banner_payload(request),
             "live_giveaways": GiveawaySerializer(
                 Giveaway.objects.live().order_by("-is_featured", "ends_at")[:3], many=True, context=ctx
             ).data,
@@ -94,7 +95,7 @@ class DashboardView(APIView):
 
 
 LANDING_HTML = """<!doctype html><html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1"><title>Rihla Travel API</title>
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Vacation Equb API</title>
 <style>
 :root{--g:#0F382B;--g2:#1B4D3E;--soft:#E7F0EC;--line:#E1EAE5;--muted:#5B6F66}
 *{box-sizing:border-box}body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:#fff;color:#0D1F18}
@@ -109,7 +110,7 @@ a.card:hover{border-color:var(--g)}a.card.primary{background:#C9A227;border-colo
 code{background:var(--soft);color:var(--g);padding:2px 6px;border-radius:6px;font-size:13px}
 section{padding:0 24px 40px}section h2{font-size:17px}td{padding:6px 12px 6px 0;font-size:14px}
 </style></head><body>
-<header><div class="wrap"><small>ሪሕላ · Rihla Travel</small><h1>Backend is running</h1>
+<header><div class="wrap"><small>ቬኬሽን ዕቁብ · Vacation Equb</small><h1>Backend is running</h1>
 <p>Flights &amp; packages · Travel Equb · Sadaqah crowdfunding · free giveaways</p>
 <div class="status"><span class="dot"></span>Database connected · {flights} flights · {equbs} Equbs · {draws} live campaigns</div></div></header>
 <div class="wrap"><div class="grid">
@@ -120,22 +121,72 @@ section{padding:0 24px 40px}section h2{font-size:17px}td{padding:6px 12px 6px 0;
 <a class="card" href="/api/equb/groups/"><b>Equb pools →</b><span>Destination savings circles</span></a>
 <a class="card" href="/api/community/crowdfunding/"><b>Crowdfunding →</b><span>Sadaqah / Hibah campaigns for travellers</span></a>
 <a class="card" href="/api/community/giveaways/"><b>Giveaways →</b><span>Free sponsored trips – 10 referrals = 1 entry</span></a>
+<a class="card" href="/privacy/"><b>Privacy policy →</b><span>What we collect and how to delete it</span></a>
+<a class="card" href="/account/delete/"><b>Delete my account →</b><span>Ask us to delete your Vacation Equb account</span></a>
 </div></div>
-<section class="wrap"><h2>Demo logins</h2><table>
-<tr><td>Admin</td><td><code>+251900000000</code> / <code>admin12345</code></td></tr>
-<tr><td>Customer (app)</td><td><code>0911223344</code> / <code>demo12345</code></td></tr></table></section>
+{demo}
 </body></html>"""
+
+# Demo passwords are only shown on a local development server, never on the public site.
+DEMO_LOGINS_HTML = """<section class="wrap"><h2>Demo logins (development only)</h2><table>
+<tr><td>Admin</td><td><code>+251900000000</code> / <code>admin12345</code></td></tr>
+<tr><td>Customer (app)</td><td><code>0911223344</code> / <code>demo12345</code></td></tr></table></section>"""
 
 
 class LandingView(View):
     """Friendly home page at / with links to the docs, admin and key endpoints."""
 
     def get(self, request):
+        from django.conf import settings
+
         from apps.equb.models import EqubGroup
         from apps.luckydraw.models import CrowdfundingCampaign, Giveaway
         from apps.travel.models import Flight
 
-        html = (LANDING_HTML.replace("{flights}", str(Flight.objects.filter(departure_time__gt=timezone.now()).count()))
+        local = request.get_host().split(":")[0] in {"localhost", "127.0.0.1", "10.0.2.2"}
+        html = (LANDING_HTML.replace("{demo}", DEMO_LOGINS_HTML if settings.DEBUG and local else "").replace("{flights}", str(Flight.objects.filter(departure_time__gt=timezone.now()).count()))
                 .replace("{equbs}", str(EqubGroup.objects.count()))
                 .replace("{draws}", str(CrowdfundingCampaign.objects.live().count() + Giveaway.objects.live().count())))
         return HttpResponse(html)
+
+
+def banner_payload(request) -> list[dict]:
+    from django.db.models import Q
+
+    from .models import Banner
+
+    now = timezone.now()
+    qs = (Banner.objects.filter(is_active=True).filter(Q(starts_at__isnull=True) | Q(starts_at__lte=now))
+          .filter(Q(ends_at__isnull=True) | Q(ends_at__gt=now)))
+    return [{"id": b.id, "title": b.title, "subtitle": b.subtitle, "image": request.build_absolute_uri(b.image.url) if b.image else None,
+             "button_label": b.button_label, "link_type": b.link_type, "link_value": b.link_value} for b in qs[:10]]
+
+
+class BannerListView(APIView):
+    """Home page banner slides."""
+
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        return Response(banner_payload(request))
+
+
+class AppVersionView(APIView):
+    """``?platform=android|ios&version=1.0.0`` → whether to show the update popup, and if it must be forced."""
+
+    permission_classes = [AllowAny]
+    DEFAULT_STORE = {"android": "https://play.google.com/store/apps/details?id={pkg}",
+                     "ios": "https://apps.apple.com/app/id{pkg}"}
+
+    def get(self, request):
+        from .models import AppRelease, version_tuple
+
+        platform = (request.query_params.get("platform") or "android").lower()
+        current = request.query_params.get("version") or "0"
+        rel = AppRelease.objects.filter(platform=platform, is_active=True).order_by("-created_at").first()
+        if rel is None or version_tuple(current) >= version_tuple(rel.version):
+            return Response({"update_available": False, "force": False, "latest_version": rel.version if rel else current})
+        force = rel.kind == AppRelease.Kind.FORCE or (
+            bool(rel.min_supported_version) and version_tuple(current) < version_tuple(rel.min_supported_version))
+        return Response({"update_available": True, "force": force, "latest_version": rel.version,
+                         "title": rel.title, "message": rel.message, "store_url": rel.store_url})

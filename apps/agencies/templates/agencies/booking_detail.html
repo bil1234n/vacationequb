@@ -1,0 +1,51 @@
+{% extends "agencies/base.html" %}{% load console_tags %}
+{% block title %}Booking {{ b.reference }}{% endblock %}{% block heading %}Booking {{ b.reference }}{% endblock %}
+{% block crumbs %}<a href="{% url 'agency:bookings' %}">Bookings</a> / {{ b.user.full_name }}{% endblock %}
+{% block actions %}{{ b.status|status_badge }}{% endblock %}
+{% block content %}
+{% if b.status == 'PENDING_PAYMENT' %}
+<div class="card" style="border:2px solid var(--gold)">
+  <div class="card-h"><h2>Collect payment · {{ b.total_amount|money }}</h2><span>Seats held until {{ b.expires_at|date:"H:i" }}</span></div>
+  {% if live %}
+    <p style="margin-top:0">Open the Chapa checkout here with the customer, or send them the link. They can pay with telebirr, CBE Birr, M-Pesa, Amole or a card.</p>
+    <div class="toolbar" style="margin:0"><input class="grow mono" type="text" value="{{ live.checkout_url }}" readonly onclick="this.select()">
+      <a class="btn" href="{{ live.checkout_url }}" target="_blank" rel="noopener">Open checkout</a></div>
+    <form method="post" style="margin-top:10px">{% csrf_token %}<input type="hidden" name="action" value="refresh"><button class="btn ghost sm">Check payment status</button></form>
+  {% else %}
+    <p style="margin-top:0">Create a secure Chapa payment link for {{ b.user.first_name }}.</p>
+    <form method="post">{% csrf_token %}<input type="hidden" name="action" value="pay"><button class="btn">Get payment link</button></form>
+  {% endif %}
+</div>
+{% elif b.status == 'CONFIRMED' %}<div class="msg success">Paid and ticketed – {{ b.user.first_name }} sees the e-tickets in the Vacation Equb app.</div>{% endif %}
+
+<div class="grid g-21 mt">
+  <div class="card"><div class="card-h"><h2>Travellers</h2></div>
+    <div class="table-wrap"><table class="t"><thead><tr><th>Name</th><th>Type</th><th>Born</th><th>Passport</th><th>Ticket</th></tr></thead><tbody>
+    {% for p in passengers %}<tr><td class="strong">{{ p.full_name }}</td><td>{{ p.get_passenger_type_display }}</td><td class="small">{{ p.date_of_birth|date:"d M Y" }}</td>
+      <td class="mono small">{{ p.passport_number|default:"—" }}</td><td class="mono small">{% if p.ticket %}{{ p.ticket.ticket_number }}{% else %}—{% endif %}</td></tr>{% endfor %}</tbody></table></div>
+  </div>
+  <div class="card"><div class="card-h"><h2>Trip</h2></div>
+    <dl class="kv"><dt>Trip</dt><dd>{{ b.destination_label }}</dd><dt>Departs</dt><dd>{{ b.departure_at|date:"D d M Y, H:i" }}</dd>
+      {% if b.fare_class %}<dt>Fare</dt><dd>{{ b.fare_class.name }}</dd>{% endif %}
+      <dt>Fare &amp; taxes</dt><dd>{{ b.fare_amount|add:b.tax_amount|money }}</dd>
+      {% if b.discount_amount %}<dt>Credit used</dt><dd>−{{ b.discount_amount|money }}</dd>{% endif %}
+      <dt>Total</dt><dd class="strong">{{ b.total_amount|money }}</dd></dl>
+    {% if policy.can_cancel %}<form method="post" style="margin-top:14px" data-confirm="Cancel booking {{ b.reference }}? {{ policy.message }}">{% csrf_token %}<input type="hidden" name="action" value="cancel"><button class="btn danger sm">Cancel booking</button></form>
+    {% elif policy.message and b.status == 'CONFIRMED' %}<p class="small muted">{{ policy.message }}</p>{% endif %}
+  </div>
+</div>
+
+<div class="grid g-2 mt">
+  <div class="card"><div class="card-h"><h2>Your earnings on this booking</h2></div>
+    {% for e in entries %}<dl class="kv"><dt>Sale</dt><dd>{{ e.gross_amount|money }} <span class="small muted">({{ e.get_kind_display }})</span></dd>
+      <dt>Platform fee ({{ e.commission_percent|floatformat:"-2" }}%)</dt><dd>−{{ e.commission|money }}</dd>
+      <dt>Your share</dt><dd class="strong">{{ e.agency_amount|money }}</dd><dt>Payout</dt><dd>{% include "agencies/_payout.html" with s=e.payout_status label=e.get_payout_status_display %}</dd></dl>
+    {% empty %}<div class="empty">Appears here once the customer has paid.</div>{% endfor %}
+  </div>
+  <div class="card"><div class="card-h"><h2>Payments</h2></div>
+    <div class="table-wrap"><table class="t"><thead><tr><th>Date</th><th>Method</th><th>Status</th><th class="r">Amount</th></tr></thead><tbody>
+    {% for p in payments %}<tr><td class="small">{{ p.created_at|date:"d M, H:i" }}</td><td>{{ p.get_provider_display }}</td><td>{{ p.status|status_badge }}{% if p.failure_reason %}<div class="small muted">{{ p.failure_reason }}</div>{% endif %}</td><td class="r num">{{ p.amount|money }}</td></tr>
+    {% empty %}<tr><td colspan="4" class="empty">No payment yet.</td></tr>{% endfor %}</tbody></table></div>
+  </div>
+</div>
+{% endblock %}

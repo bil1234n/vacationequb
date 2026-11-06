@@ -2,9 +2,9 @@
 Community Finance & Impact – two separate, Shariah-compliant systems:
 
 1. **Crowdfunding Hub (Sadaqah / Hibah)** – people give voluntarily to help a community member reach Umrah, Hajj
-   or another travel goal. The gift goes 100% to the cause; Rihla's platform fee is a separate, explicit amount
+   or another travel goal. The gift goes 100% to the cause; Vacation Equb's platform fee is a separate, explicit amount
    added on top at checkout (100 ETB gift + 5% fee = 105 ETB paid). Giving never earns a ticket or a prize.
-2. **Community Giveaways** – promotional trips paid for entirely by Rihla's marketing budget or a sponsor.
+2. **Community Giveaways** – promotional trips paid for entirely by Vacation Equb's marketing budget or a sponsor.
    Entry is free: every N friends you invite who register (10 by default) earns one entry. Nobody pays to enter,
    so there is no stake and no Maysir. Winners are picked with the provably-fair draw in ``apps.core.fairness``.
 
@@ -68,7 +68,7 @@ class CrowdfundingCampaign(TimeStampedModel):
     image_url = models.URLField(blank=True)
     beneficiary_name = models.CharField(max_length=150, help_text="Who receives the money (shown to donors)")
     beneficiary = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
-                                    related_name="crowdfunding_campaigns", help_text="Their Rihla account, if any")
+                                    related_name="crowdfunding_campaigns", help_text="Their Vacation Equb account, if any")
     goal_amount = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(1)])
     platform_fee_percent = models.DecimalField(
         max_digits=4, decimal_places=2, default=Decimal("5"), validators=[MinValueValidator(0), MaxValueValidator(20)],
@@ -179,7 +179,7 @@ class GiveawayQuerySet(models.QuerySet):
 
 
 class Giveaway(TimeStampedModel):
-    """A promotional trip paid by Rihla or a sponsor. Entries are free – earned only by inviting friends."""
+    """A promotional trip paid by Vacation Equb or a sponsor. Entries are free – earned only by inviting friends."""
 
     class Status(models.TextChoices):
         SCHEDULED = "SCHEDULED", "Scheduled"
@@ -194,7 +194,7 @@ class Giveaway(TimeStampedModel):
         EQUB_CONTRIBUTION = "EQUB_CONTRIBUTION", "Paid Equb contributions"
 
     class SponsorType(models.TextChoices):
-        COMPANY = "COMPANY", "Rihla marketing budget"
+        COMPANY = "COMPANY", "Vacation Equb marketing budget"
         CORPORATE = "CORPORATE", "Corporate sponsor"
 
     title = models.CharField(max_length=120)
@@ -203,7 +203,7 @@ class Giveaway(TimeStampedModel):
     image_url = models.URLField(blank=True)
 
     sponsor_type = models.CharField(max_length=10, choices=SponsorType.choices, default=SponsorType.COMPANY)
-    sponsor_name = models.CharField(max_length=120, default="Rihla Travel")
+    sponsor_name = models.CharField(max_length=120, default="Vacation Equb")
     sponsor_note = models.CharField(max_length=255, blank=True, help_text="e.g. 'Fully paid by Awash Bank'")
     sponsor_logo_url = models.URLField(blank=True)
 

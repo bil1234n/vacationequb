@@ -1,0 +1,18 @@
+{% extends "agencies/base.html" %}{% load console_tags %}
+{% block title %}Equb{% endblock %}{% block heading %}Equb members{% endblock %}{% block crumbs %}Give your customers and their families a place in an Equb{% endblock %}
+{% block content %}
+<div class="card"><div class="card-h"><h2>Equbs you can join</h2><span>Pick one, then choose the customer or family member</span></div>
+  <div class="table-wrap"><table class="t"><thead><tr><th>Equb</th><th>Contribution</th><th>Places</th><th>Starts</th><th>Status</th><th></th></tr></thead><tbody>
+  {% for g in groups %}<tr><td class="strong">{{ g.name }}</td><td>{{ g.contribution_amount|money }} <span class="small muted">{{ g.frequency_days|every }}</span></td>
+    <td class="num">{{ g.n }} / {{ g.max_members }}</td><td class="small">{{ g.start_date|date:"d M Y" }}</td><td>{{ g.status|status_badge }}</td>
+    <td class="r">{% if g.n < g.max_members %}<a class="btn sm" href="{% url 'agency:equb_enrol' g.slug %}{% if request.GET.customer %}?customer={{ request.GET.customer }}{% endif %}">Add a member</a>{% else %}<span class="badge b-grey">Full</span>{% endif %}</td></tr>
+  {% empty %}<tr><td colspan="6" class="empty">No Equb is open for new members right now.</td></tr>{% endfor %}</tbody></table></div>
+</div>
+<div class="card mt"><div class="card-h"><h2>Your members' places</h2></div>
+  <div class="table-wrap"><table class="t"><thead><tr><th>Member</th><th>Equb</th><th>Place</th><th>Status</th><th class="r">Paid</th></tr></thead><tbody>
+  {% for m in page %}<tr><td class="strong">{{ m.display_name }}{% if m.dependent_name %}<div class="small muted">paid by {{ m.user.full_name }}</div>{% endif %}</td>
+    <td>{{ m.group.name }}</td><td class="num">#{{ m.position }}</td><td>{{ m.status|status_badge }}{% if m.has_won %} 🏆{% endif %}</td><td class="r num">{{ m.total_paid|money }}</td></tr>
+  {% empty %}<tr><td colspan="5" class="empty">None of your customers is in an Equb yet.</td></tr>{% endfor %}</tbody></table></div>
+  {% include "console/_pagination.html" %}
+</div>
+{% endblock %}

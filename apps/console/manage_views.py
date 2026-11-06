@@ -106,13 +106,20 @@ def equb_form(request, slug=None):
             initial.update(pkg.group_defaults(), equb_package=pkg, name=f"{pkg.name} – Group {n}")
     form = f.EqubForm(request.POST or None, instance=obj, initial=initial)
     if request.method == "POST" and form.is_valid():
+        from apps.equb import services as equb_services
+
         group = form.save(commit=False)
         if not obj:
             group.organizer = request.user
+        was = obj and EqubGroup.objects.filter(pk=obj.pk).values_list("status", flat=True).first()
+        starting = group.status == EqubGroup.Status.ACTIVE and was != EqubGroup.Status.ACTIVE
+        if starting:  # "Started" chosen in the form: start it properly (rounds, first round open, members told)
+            group.status = EqubGroup.Status.OPEN
         group.save()
-        if obj and group.status == EqubGroup.Status.ACTIVE:
-            from apps.equb import services as equb_services
-            equb_services.sync_running_group(group)  # new amount / schedule / size apply to the running Equb
+        if starting:
+            equb_services.start_group(group)
+        elif obj and group.status == EqubGroup.Status.ACTIVE:
+            equb_services.sync_running_group(group)  # new amount / schedule / rounds / size apply to the running Equb
         messages.success(request, f"Equb group “{group.name}” {'updated' if obj else 'created'}.")
         if not obj and request.POST.get("_another"):
             return redirect(reverse("console:equb_add") + (f"?package={group.equb_package_id}" if group.equb_package_id else ""))
@@ -221,3 +228,64 @@ def staff_toggle(request, pk):
         u.save(update_fields=["is_active"])
         messages.success(request, f"{u.full_name} {'re-activated' if u.is_active else 'deactivated'}.")
     return redirect("console:settings")
+
+
+# --------------------------------------------------------------------------- mobile app: banners & updates
+@staff_required
+def app_content(request):
+    from apps.core.models import AppRelease, Banner
+
+    return render(request, "console/app_content.html", {
+        "nav": "app_content", "banners": Banner.objects.all(), "releases": AppRelease.objects.all()[:30],
+        "now": timezone.now()})
+
+
+@staff_required
+def banner_form(request, pk=None):
+    from apps.core.models import Banner
+
+    obj = get_object_or_404(Banner, pk=pk) if pk else None
+    form = f.BannerForm(request.POST or None, request.FILES or None, instance=obj)
+    if request.method == "POST" and form.is_valid():
+        form.save()
+        messages.success(request, f"Banner {'updated' if obj else 'added'}.")
+        return redirect("console:app_content")
+    return _render(request, nav="app_content", title="Edit banner" if obj else "New home banner", crumbs="Mobile app",
+                   form=form, cancel=reverse("console:app_content"), obj=obj,
+                   delete_url=reverse("console:banner_delete", args=[obj.pk]) if obj else None)
+
+
+@staff_required
+@require_POST
+def banner_delete(request, pk):
+    from apps.core.models import Banner
+
+    get_object_or_404(Banner, pk=pk).delete()
+    messages.success(request, "Banner deleted.")
+    return redirect("console:app_content")
+
+
+@staff_required
+def release_form(request, pk=None):
+    from apps.core.models import AppRelease
+
+    obj = get_object_or_404(AppRelease, pk=pk) if pk else None
+    form = f.AppReleaseForm(request.POST or None, instance=obj)
+    if request.method == "POST" and form.is_valid():
+        rel = form.save()
+        messages.success(request, f"{rel} saved – older apps now show the "
+                                  f"{'forced' if rel.kind == 'FORCE' else 'optional'} update popup.")
+        return redirect("console:app_content")
+    return _render(request, nav="app_content", title="Edit app update" if obj else "New app update", crumbs="Mobile app",
+                   form=form, cancel=reverse("console:app_content"), obj=obj,
+                   delete_url=reverse("console:release_delete", args=[obj.pk]) if obj else None)
+
+
+@staff_required
+@require_POST
+def release_delete(request, pk):
+    from apps.core.models import AppRelease
+
+    get_object_or_404(AppRelease, pk=pk).delete()
+    messages.success(request, "App update removed.")
+    return redirect("console:app_content")

@@ -372,7 +372,7 @@ def equb_collections(request):
     members, standings = reports.live_standings(group_id=int(pool) if pool.isdigit() else None, search=q)
     rows = reports.debtors(members, standings, band=band, only_never_paid=never)
     if request.GET.get("export") == "csv":
-        return _csv(f"rihla-equb-arrears-{timezone.localdate()}.csv",
+        return _csv(f"vacation-equb-arrears-{timezone.localdate()}.csv",
                     ["Member", "Phone", "Equb", "Place", "Standing", "Missed rounds", "Days overdue", "Arrears (ETB)",
                      "Paid (ETB)", "Credit (ETB)", "Won", "Last called"],
                     [[r["m"].user.full_name, r["m"].user.phone, r["m"].group.name, r["m"].position, r["s"].status_label,
@@ -418,6 +418,9 @@ def _call_tab(key, r, today):
 @staff_required
 def call_center(request):
     if request.method == "POST":
+        from .templatetags.console_tags import bust_equb_counts
+
+        bust_equb_counts()
         a = request.POST.get("action")
         ids = [int(i) for i in request.POST.getlist("ids") if i.isdigit()]
         mid = request.POST.get("membership", "")
@@ -468,12 +471,15 @@ def call_center(request):
 
 # --------------------------------------------------------------------------- terminations & exit requests
 TERM_TABS = [("requested", "Termination list"), ("exits", "Exit requests"), ("candidates", "Overdue candidates"),
-             ("terminated", "Terminated")]
+             ("terminated", "Terminated"), ("rejoin", "Rejoin requests")]
 
 
 @staff_required
 def terminations(request):
     if request.method == "POST":
+        from .templatetags.console_tags import bust_equb_counts
+
+        bust_equb_counts()
         a, p = request.POST.get("action"), request.POST
         m = EqubMembership.objects.filter(pk=p.get("membership") or 0).select_related("user").first()
         if a == "terminate" and m:
@@ -492,6 +498,14 @@ def terminations(request):
         elif a == "decline_exit" and m:
             _do(request, lambda: ops.decline_exit_request(m, request.user, note=p.get("note", "")),
                 f"Exit request from {m.user.full_name} declined.")
+        elif a in ("approve_rejoin", "decline_rejoin"):
+            from apps.equb.models import JoinRequest
+
+            req = JoinRequest.objects.filter(pk=p.get("join_request") or 0).select_related("user").first()
+            if req:
+                approve = a == "approve_rejoin"
+                _do(request, lambda: ops.decide_rejoin(req, request.user, approve=approve, note=p.get("note", "")),
+                    f"{req.user.full_name} {'is back in the Equb' if approve else 'was told the request was declined'}.")
         elif a == "reinstate":
             t = Termination.objects.filter(pk=p.get("termination") or 0).first()
             if t:
@@ -507,9 +521,15 @@ def terminations(request):
     candidates = [m for m in members if standings[m.id].days_overdue >= rules.terminate_after_days
                   and not m.termination_requested_at]
     done = Termination.objects.select_related("membership__user", "membership__group", "terminated_by", "reinstated_by")
-    counts = {"requested": len(requested), "exits": len(exits), "candidates": len(candidates), "terminated": done.count()}
+    from apps.equb.models import JoinRequest
+
+    rejoin = JoinRequest.objects.filter(status=JoinRequest.Status.PENDING).select_related("user", "group", "membership")
+    counts = {"requested": len(requested), "exits": len(exits), "candidates": len(candidates), "terminated": done.count(),
+              "rejoin": rejoin.count()}
     if tab == "terminated":
         rows = _pager(request, done)
+    elif tab == "rejoin":
+        rows = _pager(request, rejoin.order_by("created_at"))
     else:
         source = {"requested": requested, "exits": exits, "candidates": candidates}.get(tab, requested)
         sts = standings if tab == "candidates" else st.standings_for(source, rules)
@@ -535,6 +555,9 @@ def _due_rounds():
 def equb_draws(request):
     """Every round: what is due for a draw now, every draw ever run with its winners, and the winners' payouts."""
     if request.method == "POST" and request.POST.get("action") == "draw_now":
+        from .templatetags.console_tags import bust_equb_counts
+
+        bust_equb_counts()
         # "Draw now": the system picks the winner at random (provably fair) – for the whole Equb, or only among the
         # members of one Group Equb in it.
         rnd = EqubRound.objects.select_related("group").filter(pk=request.POST.get("round") or 0).first()
@@ -603,7 +626,7 @@ def equb_draws(request):
                     rows.append([timezone.localtime(d.executed_at).strftime("%Y-%m-%d %H:%M"), d.round.group.name,
                                  d.round.number, p.membership.user.full_name, p.membership.user.phone, p.amount,
                                  p.get_status_display(), d.get_mode_display(), len(d.eligible_memberships), p.voucher_code])
-            return _csv(f"rihla-equb-draws-{today}.csv", ["Drawn", "Equb", "Round", "Winner", "Phone", "Won (ETB)",
+            return _csv(f"vacation-equb-draws-{today}.csv", ["Drawn", "Equb", "Round", "Winner", "Phone", "Won (ETB)",
                                                           "Payout", "Mode", "Entries", "Voucher"], rows)
         ctx.update(page=_pager(request, qs), mode=mode)
     elif tab == "payouts":
@@ -841,7 +864,7 @@ def equb_memberships(request):
     if request.GET.get("export") == "csv":
         items = list(qs)
         stand = st.standings_for(items)
-        return _csv(f"rihla-equb-memberships-{timezone.localdate()}.csv",
+        return _csv(f"vacation-equb-memberships-{timezone.localdate()}.csv",
                     ["Package", "Group", "Position", "Member", "Phone", "Contribution (ETB)", "Status", "Standing",
                      "Paid (ETB)", "Arrears (ETB)", "Won round", "Joined"],
                     ([m.group.equb_package.name if m.group.equb_package_id else "", m.group.name, m.position,

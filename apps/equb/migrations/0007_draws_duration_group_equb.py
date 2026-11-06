@@ -84,7 +84,7 @@ class Migration(migrations.Migration):
             name="kind",
             field=models.CharField(
                 choices=[
-                    ("STANDARD", "Rihla Equb"),
+                    ("STANDARD", "vacation Equb"),
                     ("FAMILY", "Family"),
                     ("FRIENDS", "Friends"),
                     ("WORKPLACE", "Company / workplace"),
@@ -92,7 +92,7 @@ class Migration(migrations.Migration):
                 ],
                 db_index=True,
                 default="STANDARD",
-                help_text="Rihla Equb, or a private Group Equb created by a customer.",
+                help_text="vacation Equb, or a private Group Equb created by a customer.",
                 max_length=10,
             ),
         ),

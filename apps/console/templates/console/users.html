@@ -9,7 +9,7 @@
 <div class="card"><div class="table-wrap"><table class="t">
   <thead><tr><th>Customer</th><th>Phone</th><th>Joined</th><th>Bookings</th><th>Equbs</th><th>Referral</th><th class="r">Total paid</th></tr></thead>
   <tbody>{% for u in page %}<tr>
-    <td><div style="display:flex;gap:10px;align-items:center"><span class="avatar">{{ u.full_name|initials }}</span><div><a class="strong" href="{% url 'console:user' u.pk %}">{{ u.full_name }}</a>{% if u.is_staff %} <span class="badge b-gold">Staff</span>{% endif %}<div class="small muted">{{ u.email|default:"" }}</div></div></div></td>
+    <td><div style="display:flex;gap:10px;align-items:center"><span class="avatar">{{ u.full_name|initials }}</span><div><a class="strong" href="{% url 'console:user' u.pk %}">{{ u.full_name }}</a>{% if u.is_staff %} <span class="badge b-gold">Staff</span>{% endif %}{% if u.deletion_status == 'PENDING' %} <span class="badge b-red">Deletion requested</span>{% elif u.deletion_status == 'DELETED' %} <span class="badge b-grey">Deleted</span>{% endif %}<div class="small muted">{{ u.email|default:"" }}</div></div></div></td>
     <td class="mono">{{ u.phone }}</td><td class="small">{{ u.date_joined|date:"d M Y" }}</td><td class="num">{{ u.n_bookings }}</td><td class="num">{{ u.n_equbs }}</td>
     <td class="mono small">{{ u.referral_code }}</td><td class="r num strong">{{ u.spent|default:0|money }}</td></tr>
   {% empty %}<tr><td colspan="7" class="empty">No accounts match.</td></tr>{% endfor %}</tbody>

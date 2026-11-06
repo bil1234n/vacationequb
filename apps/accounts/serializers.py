@@ -1,5 +1,6 @@
 from django.contrib.auth import password_validation
-from rest_framework import serializers
+from rest_framework import serializers, status
+from rest_framework.exceptions import APIException
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
 
@@ -63,11 +64,24 @@ class RegisterSerializer(serializers.ModelSerializer):
         return {"refresh": str(refresh), "access": str(refresh.access_token)}
 
 
+class AccountDeletionPending(APIException):
+    """Signing in to an account that asked to be deleted and is waiting for staff review."""
+
+    status_code = status.HTTP_403_FORBIDDEN
+    default_detail = ("This account is suspended because you asked us to delete it. Our team is reviewing the request. "
+                      "Contact Vacation Equb support if you want to keep your account.")
+    default_code = "deletion_pending"
+
+
 class PhoneTokenObtainPairSerializer(TokenObtainPairSerializer):
     username_field = User.USERNAME_FIELD
 
     def validate(self, attrs):
         attrs[self.username_field] = normalize_phone(attrs.get(self.username_field, ""))
+        pending = User.objects.filter(phone=attrs[self.username_field],
+                                      deletion_status=User.DeletionStatus.PENDING).first()
+        if pending and pending.check_password(attrs.get("password", "")):
+            raise AccountDeletionPending()
         data = super().validate(attrs)
         data["user"] = UserSerializer(self.user).data
         return data
@@ -75,3 +89,10 @@ class PhoneTokenObtainPairSerializer(TokenObtainPairSerializer):
 
 class PushTokenSerializer(serializers.Serializer):
     push_token = serializers.CharField(max_length=255)
+
+
+class DeleteAccountSerializer(serializers.Serializer):
+    reason = serializers.CharField(min_length=5, max_length=1000, trim_whitespace=True,
+                                   error_messages={"min_length": "Please tell us why in a few words (at least 5 letters).",
+                                                   "blank": "Please tell us why you want to delete your account.",
+                                                   "required": "Please tell us why you want to delete your account."})

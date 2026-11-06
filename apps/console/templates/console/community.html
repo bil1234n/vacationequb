@@ -10,12 +10,12 @@
 </div>
 
 {% if tab == 'giveaways' %}
-<div class="note-box" style="margin-bottom:18px">Giveaways are paid for entirely by Rihla's marketing budget or a sponsor. Nobody pays to enter – every <b>{{ settings_refs|default:"10" }} friends</b> someone invites who register on Rihla earn them <b>one free entry</b>. Donations are never used for giveaways.</div>
+<div class="note-box" style="margin-bottom:18px">Giveaways are paid for entirely by Vacation Equb's marketing budget or a sponsor. Nobody pays to enter – every <b>{{ settings_refs|default:"10" }} friends</b> someone invites who register on Vacation Equb earn them <b>one free entry</b>. Donations are never used for giveaways.</div>
 <div class="grid g-4">
   <div class="card kpi dark"><div class="label">Live giveaways</div><div class="value">{{ kpi.live }}</div><div class="sub">{{ kpi.winners }} winner{{ kpi.winners|pluralize }} so far</div></div>
   <div class="card kpi"><div class="label">Free entries earned</div><div class="value">{{ kpi.entries }}</div><div class="sub">from {{ kpi.referrals }} referral{{ kpi.referrals|pluralize }}</div></div>
   <div class="card kpi"><div class="label">Inviters</div><div class="value">{{ kpi.participants }}</div><div class="sub">people bringing friends</div></div>
-  <div class="card kpi gold"><div class="label">Sponsored prizes</div><div class="value">{{ kpi.sponsored|compact }} <small style="font-size:14px">ETB</small></div><div class="sub">paid by Rihla &amp; sponsors</div></div>
+  <div class="card kpi gold"><div class="label">Sponsored prizes</div><div class="value">{{ kpi.sponsored|compact }} <small style="font-size:14px">ETB</small></div><div class="sub">paid by Vacation Equb &amp; sponsors</div></div>
 </div>
 <div class="card mt"><div class="card-h"><h2>Free entries earned per day</h2><span class="muted small">Last 30 days</span></div><div class="chart-box sm"><canvas data-chart="daily"></canvas></div></div>
 <div class="card mt">
@@ -36,7 +36,7 @@
 </div>
 
 {% else %}
-<div class="note-box" style="margin-bottom:18px">Every gift goes <b>100% to the cause</b>. Rihla's platform fee is a separate amount the donor sees and pays on top at checkout (e.g. 100 ETB gift + 5 ETB fee = 105 ETB). Giving never earns tickets or prizes.</div>
+<div class="note-box" style="margin-bottom:18px">Every gift goes <b>100% to the cause</b>. Vacation Equb's platform fee is a separate amount the donor sees and pays on top at checkout (e.g. 100 ETB gift + 5 ETB fee = 105 ETB). Giving never earns tickets or prizes.</div>
 <div class="grid g-4">
   <div class="card kpi dark"><div class="label">Raised for causes</div><div class="value">{{ kpi.raised|compact }} <small style="font-size:14px">ETB</small></div><div class="sub">{{ kpi.gifts }} gift{{ kpi.gifts|pluralize }} from {{ kpi.donors }} donor{{ kpi.donors|pluralize }}</div></div>
   <div class="card kpi"><div class="label">Paid out</div><div class="value">{{ kpi.disbursed|compact }} <small style="font-size:14px">ETB</small></div><div class="sub">{{ kpi.to_pay|money }} still to pay out</div></div>

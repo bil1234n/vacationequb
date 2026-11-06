@@ -1,0 +1,17 @@
+{% extends "agencies/base.html" %}{% load console_tags %}
+{% block title %}Bookings{% endblock %}{% block heading %}Bookings{% endblock %}{% block crumbs %}Tickets and packages for your customers{% endblock %}
+{% block actions %}<a class="btn" href="{% url 'agency:book' %}">Book a ticket</a>{% endblock %}
+{% block content %}
+<form class="toolbar" method="get">
+  <input class="grow" type="search" name="q" value="{{ q }}" placeholder="Booking reference, customer name or phone…">
+  <select name="status"><option value="">All statuses</option>{% for v, l in statuses %}<option value="{{ v }}" {% if status == v %}selected{% endif %}>{{ l }}</option>{% endfor %}</select>
+  <button class="btn" type="submit">Search</button>
+</form>
+<div class="card"><div class="table-wrap"><table class="t">
+  <thead><tr><th>Ref</th><th>Customer</th><th>Trip</th><th>Departs</th><th>Status</th><th class="r">Total</th></tr></thead>
+  <tbody>{% for b in page %}<tr>
+    <td><a class="mono strong" href="{% url 'agency:booking' b.reference %}">{{ b.reference }}</a></td><td>{{ b.user.full_name }}<div class="small muted">{{ b.user.phone }}</div></td>
+    <td>{{ b.destination_label }}</td><td class="small">{{ b.departure_at|date:"d M Y" }}</td><td>{{ b.status|status_badge }}</td><td class="r num strong">{{ b.total_amount|money }}</td></tr>
+  {% empty %}<tr><td colspan="6" class="empty">No bookings found.</td></tr>{% endfor %}</tbody>
+</table></div>{% include "console/_pagination.html" %}</div>
+{% endblock %}

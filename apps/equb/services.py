@@ -68,8 +68,17 @@ def join_group(user, group: EqubGroup, *, team=None, dependent: dict | None = No
         who = f"{membership.dependent_name} holds place #{membership.position} (you pay for them)."
     else:
         existing = group.memberships.filter(user=user, dependent_name="").first()
+        if existing and existing.status == EqubMembership.Status.DEFAULTED:
+            raise BusinessRuleError("Your place in this Equb was cancelled. Send a request to join again – "
+                                    "our team will review it.")
         if existing and existing.status != EqubMembership.Status.LEFT:
             raise BusinessRuleError("You are already a member of this Equb.")
+        if existing and team is None:
+            from .operations import previous_place
+
+            if previous_place(user, group) is not None:
+                raise BusinessRuleError("You left this Equb after it started. Send a request to join again – "
+                                        "our team will review it.")
         if existing:  # re-joining after leaving before start
             existing.status = EqubMembership.Status.ACTIVE
             existing.ended_at = None
@@ -123,6 +132,40 @@ def leave_group(user, group: EqubGroup):
     membership.save(update_fields=["status", "ended_at", "updated_at"])
 
 
+def round_count(group: EqubGroup, members: int | None = None) -> int:
+    """How many rounds the Equb runs: the "Rounds drawn" staff set, else one round per winner group."""
+    if group.rounds_drawn:
+        draws = group.rounds_drawn
+    else:
+        members = group.members_count if members is None else members
+        draws = -(-(members or group.max_members) // group.winners_per_round)
+    # Everyone pays the full price per person (contribution × duration value), winners included, so the Equb
+    # runs for as many rounds as there are payments; rounds after the last winner are payment-only.
+    return max(draws, group.payment_rounds)
+
+
+def _schedule_rounds(group: EqubGroup, wanted: int, members: int) -> None:
+    """
+    Make the round schedule match ``wanted`` rounds without ever duplicating a round number:
+    missing rounds are added, extra rounds nobody has paid into are removed, upcoming dates follow the schedule.
+    """
+    have = set(group.rounds.values_list("number", flat=True))
+    for n in range(1, wanted + 1):
+        if n in have:
+            continue
+        due = due_date_for(group, n)
+        EqubRound.objects.get_or_create(group=group, number=n, defaults={
+            "due_date": due, "draw_date": due + timedelta(days=group.grace_days),
+            "expected_amount": group.contribution_amount * members})
+    (group.rounds.filter(number__gt=wanted, status=EqubRound.Status.UPCOMING)
+     .exclude(contributions__isnull=False).delete())
+    for rnd in group.rounds.filter(status=EqubRound.Status.UPCOMING):
+        due = due_date_for(group, rnd.number)
+        rnd.due_date, rnd.draw_date = due, due + timedelta(days=group.grace_days)
+        rnd.expected_amount = group.contribution_amount * members
+        rnd.save(update_fields=["due_date", "draw_date", "expected_amount", "updated_at"])
+
+
 @transaction.atomic
 def start_group(group: EqubGroup) -> EqubGroup:
     group = EqubGroup.objects.select_for_update().get(pk=group.pk)
@@ -130,44 +173,35 @@ def start_group(group: EqubGroup) -> EqubGroup:
         raise BusinessRuleError("Only open Equbs can be started.")
     members = group.members_count  # an Equb can start with any number of members – even none yet
     group.status = EqubGroup.Status.ACTIVE
-    if group.start_date < timezone.localdate():
+    if group.start_date < timezone.localdate() and not group.rounds.exclude(status=EqubRound.Status.UPCOMING).exists():
         group.start_date = timezone.localdate()
     group.save()
-    rounds = -(-(members or group.max_members) // group.winners_per_round)
-    for n in range(1, rounds + 1):
-        due = due_date_for(group, n)
-        EqubRound.objects.create(group=group, number=n, due_date=due, draw_date=due + timedelta(days=group.grace_days),
-                                 expected_amount=group.contribution_amount * members)
-    first = open_round(group.rounds.get(number=1))
+    # A group that was started before (and set back to Open) keeps its rounds – they are reused, never re-created.
+    rounds = max(round_count(group, members), group.current_round or 1)
+    _schedule_rounds(group, rounds, members)
+    current = (group.rounds.filter(status=EqubRound.Status.COLLECTING).order_by("number").first()
+               or open_round(group.rounds.filter(status=EqubRound.Status.UPCOMING).order_by("number").first()
+                             or group.rounds.get(number=1)))
     for m in group.memberships.filter(status=EqubMembership.Status.ACTIVE).select_related("user"):
         notify(m.user, Notification.Kind.EQUB_REMINDER, f"{group.name} has started",
-               f"{rounds} rounds, one draw {group.every}. Round 1 contribution of "
-               f"{money(group.contribution_amount)} ETB is due {first.due_date:%d %b}.",
+               f"{rounds} rounds, one draw {group.every}. Round {current.number} contribution of "
+               f"{money(group.contribution_amount)} ETB is due {current.due_date:%d %b}. You can pay now.",
                {"equb": group.slug, "membership": m.id})
     return group
 
 
 def sync_running_group(group: EqubGroup) -> EqubGroup:
     """
-    Keep a running Equb in step after staff edit it or someone joins late: enough rounds for every member,
-    upcoming rounds on the (new) schedule, and unpaid slips of the current round at the (new) amount.
+    Keep a running Equb in step after staff edit it or someone joins late: the number of rounds staff set
+    ("Rounds drawn"), upcoming rounds on the (new) schedule, and unpaid slips of the current round at the (new) amount.
     """
     group = EqubGroup.objects.get(pk=group.pk)
     if group.status != EqubGroup.Status.ACTIVE:
         return group
     members = group.members_count
-    wanted = max(-(-(members or group.max_members) // group.winners_per_round), group.current_round or 1)
-    have = group.rounds.count()
-    for n in range(have + 1, wanted + 1):
-        due = due_date_for(group, n)
-        EqubRound.objects.create(group=group, number=n, due_date=due, draw_date=due + timedelta(days=group.grace_days),
-                                 expected_amount=group.contribution_amount * members)
-    group.rounds.filter(number__gt=wanted, status=EqubRound.Status.UPCOMING, contributions__isnull=True).delete()
-    for rnd in group.rounds.filter(status=EqubRound.Status.UPCOMING):
-        due = due_date_for(group, rnd.number)
-        rnd.due_date, rnd.draw_date = due, due + timedelta(days=group.grace_days)
-        rnd.expected_amount = group.contribution_amount * members
-        rnd.save(update_fields=["due_date", "draw_date", "expected_amount", "updated_at"])
+    drawn = group.rounds.exclude(status=EqubRound.Status.UPCOMING).aggregate(m=Max("number"))["m"] or 0
+    wanted = max(round_count(group, members), group.current_round or 1, drawn)
+    _schedule_rounds(group, wanted, members)
     rnd = group.rounds.filter(status=EqubRound.Status.COLLECTING).first()
     if rnd:
         live = list(_active_members(group).exclude(contributions__round=rnd))
@@ -181,7 +215,7 @@ def sync_running_group(group: EqubGroup) -> EqubGroup:
             if m.prepaid_credit and m.prepaid_credit > 0:
                 apply_credit(m)
     elif not group.rounds.exclude(status=EqubRound.Status.UPCOMING).exists() and group.rounds.exists():
-        open_round(group.rounds.get(number=1))
+        open_round(group.rounds.order_by("number").first())
     return group
 
 
@@ -600,6 +634,8 @@ def run_draw(rnd: EqubRound, executed_by=None, *, winner_ids: list[int] | None =
         raise BusinessRuleError("This round is not ready for a draw.")
     if group.current_round != rnd.number:
         raise BusinessRuleError("Draws must run in round order.")
+    if not group.memberships.filter(status=EqubMembership.Status.ACTIVE, has_won=False).exists():
+        return close_payment_round(rnd)  # everyone has won: this round only collects the remaining payments
     draw = EqubDraw.objects.select_for_update().get(round=rnd)
     if draw.is_executed:
         raise BusinessRuleError("This round has already been drawn.")
@@ -674,18 +710,55 @@ def run_draw(rnd: EqubRound, executed_by=None, *, winner_ids: list[int] | None =
                                    if draw.mode == "RANDOM" else "The next contribution is due soon.")),
                {"equb": group.slug, "round": rnd.number, "membership": m.id})
 
-    nxt = group.rounds.filter(number=rnd.number + 1).first()
-    still_waiting = group.memberships.filter(status=EqubMembership.Status.ACTIVE, has_won=False).exists()
-    if nxt and still_waiting:
-        open_round(nxt)
-    else:
-        group.rounds.filter(number__gt=rnd.number, contributions__isnull=True).delete()
-        EqubGroup.objects.filter(pk=group.pk).update(status=EqubGroup.Status.COMPLETED)
-        for m in _active_members(group).filter(prepaid_credit__gt=0).select_related("user"):
-            notify(m.user, Notification.Kind.EQUB_REMINDER, f"{group.name} is complete",
-                   f"Every member has won. Your unused credit of {money(m.prepaid_credit)} ETB will be refunded – "
-                   "our team will contact you.", {"equb": group.slug, "membership": m.id})
+    _advance(group, rnd)
     return payouts
+
+
+def _advance(group: EqubGroup, rnd: EqubRound) -> None:
+    """Open the next round – winners keep paying until every payment round is done – or finish the Equb."""
+    nxt = group.rounds.filter(number=rnd.number + 1).first()
+    if nxt:
+        open_round(nxt)
+        return
+    EqubGroup.objects.filter(pk=group.pk).update(status=EqubGroup.Status.COMPLETED)
+    for m in _active_members(group).filter(prepaid_credit__gt=0).select_related("user"):
+        notify(m.user, Notification.Kind.EQUB_REMINDER, f"{group.name} is complete",
+               f"Every round is done. Your unused credit of {money(m.prepaid_credit)} ETB will be refunded – "
+               "our team will contact you.", {"equb": group.slug, "membership": m.id})
+
+
+def reopen_if_short(group: EqubGroup) -> EqubGroup:
+    """
+    An Equb that finished before every payment round was collected (it used to end once everyone had won)
+    is opened again so members can pay the rest of the price per person.
+    """
+    if group.status != EqubGroup.Status.COMPLETED or not group.payment_rounds:
+        return group
+    wanted = round_count(group)
+    if group.rounds.count() >= wanted:
+        return group
+    with transaction.atomic():
+        group = EqubGroup.objects.select_for_update().get(pk=group.pk)
+        if group.status != EqubGroup.Status.COMPLETED:
+            return group
+        group.status = EqubGroup.Status.ACTIVE
+        group.save(update_fields=["status", "updated_at"])
+        _schedule_rounds(group, wanted, group.members_count)
+        if not group.rounds.filter(status=EqubRound.Status.COLLECTING).exists():
+            nxt = group.rounds.filter(status=EqubRound.Status.UPCOMING).order_by("number").first()
+            if nxt:
+                open_round(nxt)
+    return EqubGroup.objects.get(pk=group.pk)
+
+
+def close_payment_round(rnd: EqubRound) -> list:
+    """A round after everyone has won: nothing to draw, it is closed on its draw day and the next one opens."""
+    group = rnd.group
+    rnd.status = EqubRound.Status.DRAWN
+    rnd.draw_note = "Payment-only round – every member has already won"
+    rnd.save(update_fields=["status", "draw_note", "updated_at"])
+    _advance(group, rnd)
+    return []
 
 
 def verify_draw(rnd: EqubRound) -> dict:
@@ -756,7 +829,16 @@ def mark_payout_paid_out(payout: EqubPayout, staff, *, method: str, reference: s
 
 
 # --- ledgers ----------------------------------------------------------------
-def member_ledger(group: EqubGroup) -> list[dict]:
+def public_name(m: EqubMembership, viewer=None) -> str:
+    """Members see only their own name; everyone else is "Member <place>". Staff (and the console) see real names."""
+    if viewer is None or getattr(viewer, "is_staff", False):
+        return m.display_name
+    if viewer.is_authenticated and m.user_id == viewer.id:
+        return f"{m.display_name} (you)" if not m.is_dependent else f"{m.dependent_name} (your place)"
+    return f"Member {m.position}"
+
+
+def member_ledger(group: EqubGroup, viewer=None) -> list[dict]:
     rows = []
     memberships = list(group.memberships.exclude(status=EqubMembership.Status.LEFT).select_related("user", "won_round", "group"))
     standings = standing_mod.standings_for(memberships)
@@ -769,8 +851,10 @@ def member_ledger(group: EqubGroup) -> list[dict]:
     for m in memberships:
         st = standings[m.id]
         rows.append({
-            "membership_id": m.id, "position": m.position, "name": m.display_name,
-            "phone_masked": m.user.phone[:4] + "*****" + m.user.phone[-3:],
+            "membership_id": m.id, "position": m.position, "name": public_name(m, viewer),
+            "is_me": bool(viewer is not None and viewer.is_authenticated and m.user_id == viewer.id),
+            "phone_masked": (m.user.phone[:4] + "*****" + m.user.phone[-3:])
+            if viewer is None or getattr(viewer, "is_staff", False) else "",
             "status": m.status, "has_won": m.has_won, "won_round": m.won_round.number if m.won_round else None,
             "total_paid": str(m.total_paid), "missed_count": st.missed_rounds, "standing": st.status,
             "standing_label": st.status_label, "standing_tone": st.tone,
@@ -787,3 +871,59 @@ def group_totals(group: EqubGroup) -> dict:
             "payouts_issued": payouts["n"] or 0, "payouts_total": str(payouts["s"] or 0),
             "service_fees": str(payouts["fee"] or 0),
             "rounds_drawn": group.rounds.filter(status=EqubRound.Status.DRAWN).count()}
+
+
+# --- pending (unfinished) app payments ----------------------------------------------
+GATEWAY_METHODS = (EqubPayment.Method.CHAPA, EqubPayment.Method.TELEBIRR, EqubPayment.Method.MOCK)
+SCHEDULED_BILL_HOURS = 24  # a calendar-pay bill stays payable for a day
+
+
+def cancel_pending_payment(record: EqubPayment, *, reason: str = "Cancelled by the member") -> EqubPayment:
+    """
+    Cancel an app payment that was started but not finished. Chapa is asked first: if the member did pay,
+    the payment is credited instead of being cancelled.
+    """
+    from apps.payments.services import apply_status, refresh_from_provider
+
+    record = EqubPayment.objects.select_related("transaction").get(pk=record.pk)
+    if record.status != EqubPayment.Status.PENDING:
+        raise BusinessRuleError("Only payments that are still waiting can be cancelled.")
+    txn = record.transaction
+    if txn is not None:
+        txn = refresh_from_provider(txn)
+        if txn.status == PaymentTransaction.Status.SUCCESS:
+            record.refresh_from_db()
+            return record
+        if not txn.is_final:
+            apply_status(txn.pk, PaymentTransaction.Status.CANCELLED, reason=reason)
+    record.refresh_from_db()
+    if record.status == EqubPayment.Status.PENDING:
+        record.status = EqubPayment.Status.CANCELLED
+        record.note = (record.note or reason)[:255]
+        record.save(update_fields=["status", "note", "updated_at"])
+    return record
+
+
+def expire_pending_payments(rules: EqubSettings | None = None, membership: EqubMembership | None = None) -> int:
+    """Cancel app payments left unpaid longer than the Equb rules allow (calendar-pay bills get a day)."""
+    from .models import ScheduledPayment
+
+    rules = rules or EqubSettings.load()
+    now = timezone.now()
+    qs = EqubPayment.objects.filter(status=EqubPayment.Status.PENDING, method__in=GATEWAY_METHODS,
+                                    created_at__lt=now - timedelta(minutes=rules.pending_payment_minutes))
+    if membership is not None:
+        qs = qs.filter(membership=membership)
+    bills = set(ScheduledPayment.objects.filter(transaction__isnull=False, status=ScheduledPayment.Status.SENT,
+                                                sent_at__gte=now - timedelta(hours=SCHEDULED_BILL_HOURS))
+                .values_list("transaction_id", flat=True))
+    n = 0
+    for record in qs.select_related("transaction")[:200]:
+        if record.transaction_id in bills:
+            continue
+        try:
+            if cancel_pending_payment(record, reason="Not paid in time").status == EqubPayment.Status.CANCELLED:
+                n += 1
+        except BusinessRuleError:
+            pass
+    return n

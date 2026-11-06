@@ -52,6 +52,11 @@ class UserManager(BaseUserManager):
 
 
 class User(AbstractBaseUser, PermissionsMixin):
+    class DeletionStatus(models.TextChoices):
+        NONE = "", "Active"
+        PENDING = "PENDING", "Deletion requested (suspended)"
+        DELETED = "DELETED", "Deleted"
+
     class Language(models.TextChoices):
         AMHARIC = "am", "Amharic"
         ENGLISH = "en", "English"
@@ -79,6 +84,16 @@ class User(AbstractBaseUser, PermissionsMixin):
     is_staff = models.BooleanField(default=False)
     date_joined = models.DateTimeField(default=timezone.now)
 
+    # Account deletion (Google Play requires it): the customer asks, the account is suspended at once,
+    # staff approve (personal data is wiped) or restore it. See apps/accounts/services.py.
+    deletion_status = models.CharField(max_length=10, choices=DeletionStatus.choices, default=DeletionStatus.NONE,
+                                       blank=True, db_index=True)
+    deletion_reason = models.TextField(blank=True)
+    deletion_requested_at = models.DateTimeField(null=True, blank=True)
+    deletion_reviewed_at = models.DateTimeField(null=True, blank=True)
+    deletion_reviewed_by = models.ForeignKey("self", null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    deletion_note = models.CharField(max_length=255, blank=True, help_text="Staff note on the decision")
+
     objects = UserManager()
 
     USERNAME_FIELD = "phone"
@@ -102,3 +117,7 @@ class User(AbstractBaseUser, PermissionsMixin):
     @property
     def first_name(self):
         return self.full_name.split(" ")[0] if self.full_name else ""
+
+    @property
+    def deletion_pending(self) -> bool:
+        return self.deletion_status == self.DeletionStatus.PENDING

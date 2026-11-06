@@ -187,21 +187,57 @@ def neg(value):
         return value
 
 
+COUNTS_KEY = "console:equb_counts"
+
+
+def bust_equb_counts():
+    from django.core.cache import cache
+
+    cache.delete(COUNTS_KEY)
+
+
 @register.simple_tag
 def equb_counts():
-    """Cheap counts for the sidebar badges (no standings maths)."""
+    """
+    Sidebar badges – worked out exactly like the pages they link to, so the number always matches the list:
+    Equb draws = rounds due for a draw today, Call centre = members on the call list not called yet,
+    Terminations = termination requests + exit requests + rejoin requests waiting for a decision.
+    Cached for 30 seconds and refreshed whenever staff act on those pages.
+    """
+    from django.core.cache import cache
     from django.db.models import F
     from django.utils import timezone
 
-    from apps.equb.models import Contribution, EqubMembership, EqubRound
+    from apps.equb import reports
+    from apps.equb.models import EqubGroup, EqubMembership, EqubRound, EqubSettings, JoinRequest
 
+    hit = cache.get(COUNTS_KEY)
+    if hit is not None:
+        return hit
+    rules = EqubSettings.load()
+    today = timezone.localdate()
+    members, standings = reports.live_standings(rules=rules)
+    on_call_list = [m for m in members
+                    if standings[m.id].arrears > 0 and standings[m.id].days_overdue >= rules.call_after_days]
     live = EqubMembership.objects.filter(status__in=EqubMembership.LIVE_STATUSES)
-    return {
-        "draws_due": EqubRound.objects.filter(status="COLLECTING", group__status="ACTIVE", group__current_round=F("number"),
-                                              draw_date__lte=timezone.localdate()).count(),
-        "terminations": live.filter(Q(termination_requested_at__isnull=False) | Q(exit_requested_at__isnull=False)).count(),
-        "uncalled": live.filter(called_at__isnull=True, contributions__status=Contribution.Status.LATE).distinct().count(),
+    out = {
+        "draws_due": EqubRound.objects.filter(status="COLLECTING", group__status=EqubGroup.Status.ACTIVE,
+                                              group__current_round=F("number"), draw_date__lte=today).count(),
+        "uncalled": sum(1 for m in on_call_list if m.called_at is None),
+        "terminations": live.filter(termination_requested_at__isnull=False).count()
+        + live.filter(exit_requested_at__isnull=False).count()
+        + JoinRequest.objects.filter(status=JoinRequest.Status.PENDING).count(),
     }
+    cache.set(COUNTS_KEY, out, 30)
+    return out
+
+
+@register.simple_tag
+def deletion_count():
+    """Sidebar badge: customers waiting for an account-deletion decision."""
+    from apps.accounts.models import User
+
+    return User.objects.filter(deletion_status=User.DeletionStatus.PENDING).count()
 
 
 @register.filter

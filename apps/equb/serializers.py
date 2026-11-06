@@ -1,3 +1,4 @@
+import re
 from decimal import Decimal
 
 from rest_framework import serializers
@@ -22,7 +23,13 @@ class EqubRoundSerializer(serializers.ModelSerializer):
                   "paid_count", "members_count", "eligible_count", "seed_commitment", "draw_note", "winners"]
 
     def get_winners(self, obj) -> list[dict]:
-        return [{"name": p.membership.user.full_name, "position": p.membership.position, "amount": str(p.amount)}
+        from .services import public_name
+
+        request = self.context.get("request")
+        viewer = getattr(request, "user", None) if request else None
+        return [{"name": public_name(p.membership, viewer) if viewer is not None else f"Member {p.membership.position}",
+                 "position": p.membership.position, "amount": str(p.amount),
+                 "is_me": bool(viewer is not None and viewer.is_authenticated and p.membership.user_id == viewer.id)}
                 for p in obj.payouts.select_related("membership__user")]
 
     def get_paid_count(self, obj) -> int:
@@ -109,17 +116,23 @@ def rules_summary(g: EqubGroup, rules: EqubSettings) -> list[str]:
     out.append(f"{rules.block_at} unpaid rounds keep you out of draws until you catch up; "
                f"{rules.suspend_at} unpaid rounds can lead to your place being cancelled.")
     if g.draw_type == EqubGroup.DrawType.MANUAL:
-        out.append("Rihla Travel runs each round's draw on the draw date and announces the winner in the app.")
+        out.append("vacation Travel runs each round's draw on the draw date and announces the winner in the app.")
     else:
         out.append("A provably-fair random draw runs automatically on each draw date – you can verify it in the app.")
-    basis = ("guaranteed by Rihla Travel" if g.payout_basis == EqubGroup.PayoutBasis.FULL_POT
+    basis = ("guaranteed by vacation Travel" if g.payout_basis == EqubGroup.PayoutBasis.FULL_POT
              else "from what was collected by draw day")
     out.append(f"Every member wins once. Each winner receives about {money(g.payout_per_winner)} ETB ({basis}), "
                f"after a {g.service_fee_percent.normalize()}% service fee.")
     out.append(f"You can pay up to {rules.max_advance_rounds} rounds ahead; early payments are used automatically.")
-    out.append("Before the Equb starts you can leave freely. Once it is running, leaving needs approval from Rihla Travel.")
+    out.append("Before the Equb starts you can leave freely. Once it is running, leaving needs approval from vacation Travel.")
     out += [line.strip() for line in (g.rules_text or "").splitlines() if line.strip()]
     return out
+
+
+def terms_lines(g: EqubGroup) -> list[str]:
+    """The group's own Terms Content (falls back to its package's terms), one line per term."""
+    text = g.rules_text or (g.equb_package.terms_content if g.equb_package_id else "") or ""
+    return [re.sub(r"^\s*(?:[•\-*]|\d{1,2}[.)])\s+", "", line).strip() for line in text.splitlines() if line.strip()]
 
 
 class EqubGroupDetailSerializer(EqubGroupListSerializer):
@@ -129,13 +142,15 @@ class EqubGroupDetailSerializer(EqubGroupListSerializer):
     my_standing = serializers.SerializerMethodField()
     organizer_name = serializers.CharField(source="organizer.full_name", read_only=True, default=None)
     rules_summary = serializers.SerializerMethodField()
+    terms_content = serializers.SerializerMethodField()
+    rejoin = serializers.SerializerMethodField()
     join_code = serializers.SerializerMethodField()
     payout_basis_display = serializers.CharField(source="get_payout_basis_display", read_only=True)
 
     class Meta(EqubGroupListSerializer.Meta):
         fields = EqubGroupListSerializer.Meta.fields + [
             "service_fee_percent", "late_fee", "grace_days",
-            "require_paid_to_draw", "payout_basis", "payout_basis_display", "organizer_name", "rules_summary",
+            "require_paid_to_draw", "payout_basis", "payout_basis_display", "organizer_name", "rules_summary", "terms_content", "rejoin",
             "join_code", "current_round_detail", "my_membership", "my_current_contribution", "my_standing",
         ]
 
@@ -146,7 +161,7 @@ class EqubGroupDetailSerializer(EqubGroupListSerializer):
 
     def get_current_round_detail(self, obj) -> dict | None:
         r = self._current(obj)
-        return EqubRoundSerializer(r).data if r else None
+        return EqubRoundSerializer(r, context=self.context).data if r else None
 
     def _me(self, obj):
         if not hasattr(self, "_mine"):
@@ -173,6 +188,16 @@ class EqubGroupDetailSerializer(EqubGroupListSerializer):
 
     def get_rules_summary(self, obj) -> list[str]:
         return rules_summary(obj, self.context.get("rules") or EqubSettings.load())
+
+    def get_terms_content(self, obj) -> list[str]:
+        return terms_lines(obj)
+
+    def get_rejoin(self, obj) -> dict | None:
+        """Set when I was removed from (or left) this Equb after it started: I must ask to join again."""
+        from .operations import rejoin_info
+
+        request = self.context.get("request")
+        return rejoin_info(request.user, obj) if request else None
 
     def get_join_code(self, obj) -> str | None:
         request = self.context.get("request")
@@ -229,12 +254,20 @@ class EqubPaymentSerializer(serializers.ModelSerializer):
     credit_after = serializers.SerializerMethodField()
     group = serializers.CharField(source="membership.group.name", read_only=True)
     is_office = serializers.BooleanField(read_only=True)
+    checkout = serializers.SerializerMethodField()
 
     class Meta:
         model = EqubPayment
         fields = ["id", "reference", "group", "amount", "rounds_requested", "method", "method_display", "status",
                   "status_display", "external_reference", "is_office", "paid_at", "created_at", "rounds", "credit_after",
-                  "note"]
+                  "note", "checkout"]
+
+    def get_checkout(self, obj) -> dict | None:
+        """For a payment still waiting: the Chapa page to finish it (it can also be cancelled)."""
+        txn = obj.transaction
+        if obj.status != EqubPayment.Status.PENDING or txn is None or txn.is_final or not txn.checkout_url:
+            return None
+        return {"reference": str(txn.reference), "checkout_url": txn.checkout_url, "provider": txn.provider}
 
     def get_rounds(self, obj) -> list[int]:
         return [r["round"] for r in (obj.allocation or {}).get("rounds", [])]
@@ -303,3 +336,10 @@ class InviteIdSerializer(serializers.Serializer):
 
 class RemoveMemberSerializer(serializers.Serializer):
     membership_id = serializers.IntegerField()
+
+
+class ScheduledPaymentCreateSerializer(serializers.Serializer):
+    membership = serializers.IntegerField()
+    scheduled_for = serializers.DateTimeField()
+    rounds = serializers.IntegerField(min_value=1, max_value=60, default=1)
+    repeat = serializers.ChoiceField(choices=["ONCE", "EVERY_DUE"], default="ONCE")

@@ -12,7 +12,7 @@ class BusinessRuleError(APIException):
     default_code = "business_rule"
 
 
-def rihla_exception_handler(exc, context):
+def vacation_exception_handler(exc, context):
     if isinstance(exc, DjangoValidationError):
         exc = ValidationError(exc.message_dict if hasattr(exc, "message_dict") else exc.messages)
     response = exception_handler(exc, context)

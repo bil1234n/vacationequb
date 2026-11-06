@@ -1,0 +1,25 @@
+{% extends "console/base.html" %}{% load console_tags %}
+{% block title %}Travel agencies{% endblock %}{% block heading %}Travel agencies{% endblock %}{% block crumbs %}Partners selling tickets and Equbs on Vacation Equb{% endblock %}
+{% block actions %}<a class="btn" href="{% url 'console:agency_add' %}">+ New agency</a>{% endblock %}
+{% block content %}
+<div class="grid g-4">
+  <div class="card kpi dark"><div class="label">Active agencies</div><div class="value">{{ kpi.agencies }}</div><div class="sub">&nbsp;</div></div>
+  <div class="card kpi"><div class="label">Agency sales</div><div class="value">{{ kpi.sales|compact }} <small style="font-size:14px">ETB</small></div><div class="sub">all time</div></div>
+  <div class="card kpi gold"><div class="label">Our commission</div><div class="value">{{ kpi.commission|compact }} <small style="font-size:14px">ETB</small></div><div class="sub">earned from agencies</div></div>
+  <div class="card kpi"><div class="label">Owed to agencies</div><div class="value {% if kpi.owed %}red{% endif %}">{{ kpi.owed|compact }} <small style="font-size:14px">ETB</small></div><div class="sub">to pay out</div></div>
+</div>
+<form class="toolbar mt" method="get">
+  <input class="grow" type="search" name="q" value="{{ q }}" placeholder="Agency name, phone or licence…">
+  <select name="status"><option value="">All statuses</option>{% for v, l in statuses %}<option value="{{ v }}" {% if status == v %}selected{% endif %}>{{ l }}</option>{% endfor %}</select>
+  <button class="btn" type="submit">Search</button>
+</form>
+<div class="card"><div class="table-wrap"><table class="t">
+  <thead><tr><th>Agency</th><th>Phone</th><th>Status</th><th>Chapa split</th><th class="r">Customers</th><th class="r">Sales</th><th class="r">Commission</th><th class="r">Owed</th></tr></thead>
+  <tbody>{% for a in page %}<tr>
+    <td><a class="strong" href="{% url 'console:agency' a.pk %}">{{ a.name }}</a><div class="small muted">{{ a.city }}{% if a.license_number %} · {{ a.license_number }}{% endif %}</div></td>
+    <td class="mono">{{ a.phone }}</td><td>{{ a.status|status_badge:a.get_status_display }}</td>
+    <td>{% if a.chapa_subaccount_id %}<span class="badge b-green">Linked</span>{% else %}<span class="badge b-grey">Not linked</span>{% endif %}</td>
+    <td class="r num">{{ a.n_customers }}</td><td class="r num">{{ a.sales|default:0|money }}</td><td class="r num">{{ a.commission|default:0|money }}</td><td class="r num strong">{{ a.owed|default:0|money }}</td></tr>
+  {% empty %}<tr><td colspan="8" class="empty">No agencies yet. <a href="{% url 'console:agency_add' %}">Add the first one →</a></td></tr>{% endfor %}</tbody>
+</table></div>{% include "console/_pagination.html" %}</div>
+{% endblock %}

@@ -1,0 +1,19 @@
+{% extends "agencies/base.html" %}{% load console_tags %}
+{% block title %}Team{% endblock %}{% block heading %}Team{% endblock %}{% block crumbs %}People who can sign in to {{ agency.name }}{% endblock %}
+{% block content %}
+<div class="grid g-21">
+  <div class="card"><div class="table-wrap"><table class="t"><thead><tr><th>Name</th><th>Phone</th><th>Role</th><th>Status</th><th></th></tr></thead><tbody>
+  {% for s in staff %}<tr><td><div style="display:flex;gap:10px;align-items:center"><span class="avatar">{{ s.user.full_name|initials }}</span><span class="strong">{{ s.user.full_name }}</span></div></td>
+    <td class="mono">{{ s.user.phone }}</td><td>{% if s.role == 'OWNER' %}<span class="badge b-gold">Owner</span>{% else %}{{ s.get_role_display }}{% endif %}</td>
+    <td>{% if s.is_active %}<span class="badge b-green">Active</span>{% else %}<span class="badge b-red">Disabled</span>{% endif %}</td>
+    <td class="r">{% if me.can_manage and s.role != 'OWNER' and s.user_id != request.user.id %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="toggle"><input type="hidden" name="staff" value="{{ s.pk }}"><button class="btn ghost xs">{% if s.is_active %}Disable{% else %}Enable{% endif %}</button></form>{% endif %}</td></tr>
+  {% endfor %}</tbody></table></div></div>
+  {% if me.can_manage %}
+  <form method="post" class="card" novalidate>{% csrf_token %}
+    <div class="card-h"><h2>Add a team member</h2></div>
+    {% if form.errors %}<div class="msg error">Please fix the highlighted fields.</div>{% endif %}
+    {% for bf in form %}{% include "console/_field.html" with bf=bf %}{% endfor %}
+    <button class="btn" type="submit">Add</button>
+  </form>{% endif %}
+</div>
+{% endblock %}

@@ -1,4 +1,4 @@
-/* Rihla staff console — white surfaces, professional dark green */
+/* Vacation Equb staff console — white surfaces, professional dark green */
 :root {
   --green: #0F382B; --green-2: #1B4D3E; --green-3: #3E8E6C; --green-soft: #E7F0EC; --green-tint: #F3F8F5;
   --gold: #C9A227; --gold-soft: #FBF5E1; --bg: #F6F9F7; --card: #FFFFFF; --line: #E1EAE5;
@@ -16,7 +16,7 @@ a:hover { text-decoration: underline; }
 .shell { display: grid; grid-template-columns: 248px 1fr; min-height: 100vh; }
 .sidebar { background: var(--green); color: #fff; padding: 22px 14px; position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; }
 .brand { display: flex; align-items: center; gap: 10px; padding: 4px 10px 22px; }
-.brand-mark { width: 36px; height: 36px; border-radius: 10px; background: var(--gold); display: grid; place-items: center; color: var(--green); font-weight: 800; }
+.brand-mark { width: 36px; height: 36px; flex: none; border-radius: 10px; background: var(--gold); display: grid; place-items: center; color: var(--green); font-weight: 800; font-size: 13px; letter-spacing: .02em; }
 .brand b { display: block; font-size: 16px; letter-spacing: .02em; }
 .brand small { color: rgba(255,255,255,.6); font-size: 11px; letter-spacing: .12em; text-transform: uppercase; }
 .nav-label { color: rgba(255,255,255,.45); font-size: 11px; letter-spacing: .12em; text-transform: uppercase; padding: 14px 12px 6px; }

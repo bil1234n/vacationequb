@@ -4,7 +4,7 @@ Community Finance & Impact services.
 Crowdfunding: a donor gives ``amount`` (100% to the cause) and pays ``amount + fee`` – the platform fee is a separate,
 explicit add-on. Donations never earn entries or prizes.
 
-Giveaways: free entries, earned only by referrals – every ``referrals_per_entry`` friends (10) who register on Rihla
+Giveaways: free entries, earned only by referrals – every ``referrals_per_entry`` friends (10) who register on Vacation Equb
 with your code during the giveaway = 1 entry. Entries are issued as contiguous number ranges under a row lock and
 the winners are picked with the commit/reveal draw in ``apps.core.fairness`` (anyone can verify it afterwards).
 """
@@ -41,13 +41,13 @@ def money(v) -> str:
 
 
 def mask(name: str) -> str:
-    parts = (name or "Rihla user").split()
+    parts = (name or "Vacation Equb user").split()
     return parts[0] + (f" {parts[1][0]}." if len(parts) > 1 else "")
 
 
 # =========================================================================== crowdfunding
 def quote(campaign: CrowdfundingCampaign, amount) -> dict:
-    """The checkout breakdown: gift (to the cause) + platform fee (to Rihla) = total."""
+    """The checkout breakdown: gift (to the cause) + platform fee (to Vacation Equb) = total."""
     amount = Decimal(amount).quantize(CENT)
     fee = campaign.fee_for(amount)
     return {"amount": amount, "fee_percent": campaign.platform_fee_percent, "fee": fee, "total": amount + fee}
@@ -169,7 +169,7 @@ def _sync_participant(giveaway_id: int, user, notify_user: bool = True) -> Givea
                    {"giveaway": g.slug})
         else:
             left = g.referrals_per_entry - refs % g.referrals_per_entry
-            notify(user, Notification.Kind.PROMO, "Your friend joined Rihla 🎉",
+            notify(user, Notification.Kind.PROMO, "Your friend joined Vacation Equb 🎉",
                    f"{refs % g.referrals_per_entry}/{g.referrals_per_entry} friends for your next free entry in “{g.title}” – "
                    f"{left} more to go.", {"giveaway": g.slug})
     return p
@@ -179,7 +179,7 @@ def on_referral_signup(*, referrer, new_user):
     """A friend registered with ``referrer``'s code: update their progress in every live giveaway."""
     live = list(Giveaway.objects.live().values_list("pk", flat=True))
     if not live:
-        notify(referrer, Notification.Kind.PROMO, "Your friend joined Rihla 🎉",
+        notify(referrer, Notification.Kind.PROMO, "Your friend joined Vacation Equb 🎉",
                f"{new_user.first_name} signed up with your code. Invite friends during a giveaway to earn free entries.", {})
         return
     for pk in live:

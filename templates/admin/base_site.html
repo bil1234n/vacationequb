@@ -1,5 +1,5 @@
 {% extends "admin/base.html" %}{% load static %}
-{% block title %}{% if subtitle %}{{ subtitle }} | {% endif %}{{ title }} · Rihla data admin{% endblock %}
+{% block title %}{% if subtitle %}{{ subtitle }} | {% endif %}{{ title }} · Vacation Equb data admin{% endblock %}
 {% block extrastyle %}{{ block.super }}
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -24,7 +24,7 @@
   #header { padding: 14px 32px; border-bottom: 3px solid #C9A227; }
   #branding h1 { font-weight: 700; font-size: 18px; }
   #branding h1 a { display: inline-flex; align-items: center; gap: 10px; }
-  #branding .mark { width: 30px; height: 30px; border-radius: 8px; background: #C9A227; color: #0F382B; display: inline-grid; place-items: center; font-weight: 800; }
+  #branding .mark { min-width: 30px; padding: 0 6px; font-size: 13px; letter-spacing: .5px; height: 30px; border-radius: 8px; background: #C9A227; color: #0F382B; display: inline-grid; place-items: center; font-weight: 800; }
   #user-tools { font-weight: 500; letter-spacing: 0; text-transform: none; font-size: 13px; }
   .theme-toggle { display: none !important; }
   div.breadcrumbs { padding: 12px 32px; border-bottom: 1px solid #E1EAE5; }
@@ -47,7 +47,7 @@
 </style>
 {% endblock %}
 {% block branding %}
-<div id="site-name"><h1><a href="{% url 'admin:index' %}"><span class="mark">R</span>Rihla data admin</a></h1></div>
+<div id="site-name"><h1><a href="{% url 'admin:index' %}"><span class="mark">VE</span>Vacation Equb data admin</a></h1></div>
 {% endblock %}
 {% block userlinks %}<a class="back-console" href="/console/">← Back to console</a> {{ block.super }}{% endblock %}
 {% block nav-global %}{% endblock %}

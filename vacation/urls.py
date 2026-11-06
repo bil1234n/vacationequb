@@ -4,17 +4,23 @@ from django.contrib import admin
 from django.urls import include, path
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 
-from apps.core.views import DashboardView, HealthView, LandingView
+from apps.accounts.web import delete_account, privacy_policy
+from apps.core.views import AppVersionView, BannerListView, DashboardView, HealthView, LandingView
 
-admin.site.site_header = "Rihla Travel Administration"
-admin.site.site_title = "Rihla Admin"
+admin.site.site_header = "Vacation Equb Administration"
+admin.site.site_title = "Vacation Equb Admin"
 
 urlpatterns = [
     path("", LandingView.as_view(), name="landing"),
+    path("privacy/", privacy_policy, name="privacy"),
+    path("account/delete/", delete_account, name="delete-account-web"),
     path("admin/", admin.site.urls),
     path("console/", include("apps.console.urls")),
+    path("agency/", include("apps.agencies.urls")),
     path("api/health/", HealthView.as_view(), name="health"),
     path("api/home/dashboard/", DashboardView.as_view(), name="dashboard"),
+    path("api/home/banners/", BannerListView.as_view(), name="banners"),
+    path("api/app/version/", AppVersionView.as_view(), name="app-version"),
     path("api/auth/", include("apps.accounts.urls")),
     path("api/travel/", include("apps.travel.urls")),
     path("api/equb/", include("apps.equb.urls")),

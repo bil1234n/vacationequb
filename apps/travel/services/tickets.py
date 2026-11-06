@@ -28,7 +28,7 @@ TICKET_PREFIX = "966"  # placeholder plating carrier code – use your IATA/BSP 
 
 
 def _key() -> bytes:
-    return settings.RIHLA["TICKET_SIGNING_KEY"].encode()
+    return settings.VACATION["TICKET_SIGNING_KEY"].encode()
 
 
 def sign_payload(data: dict) -> str:
@@ -98,7 +98,7 @@ def render_itinerary_pdf(booking: Booking) -> bytes:
         c.rect(0, height - 42 * mm, width, 42 * mm, fill=1, stroke=0)
         c.setFillColor(colors.white)
         c.setFont("Helvetica-Bold", 22)
-        c.drawString(margin, height - 20 * mm, "RIHLA TRAVEL")
+        c.drawString(margin, height - 20 * mm, "VACATION EQUB")
         c.setFont("Helvetica", 10)
         c.drawString(margin, height - 27 * mm, "Electronic ticket itinerary & receipt")
         c.setFont("Helvetica-Bold", 12)

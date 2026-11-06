@@ -106,7 +106,7 @@ class Command(BaseCommand):
                 hotel_stars=stars, is_featured=feat,
                 summary=f"{days} days in {city} – {', '.join(includes[:3])}."))
 
-        admin, _ = User.objects.get_or_create(phone="+251900000000", defaults={"full_name": "Rihla Admin", "is_staff": True, "is_superuser": True})
+        admin, _ = User.objects.get_or_create(phone="+251900000000", defaults={"full_name": "Vacation Equb Admin", "is_staff": True, "is_superuser": True})
         admin.set_password("admin12345")
         admin.save()
         demo, _ = User.objects.get_or_create(phone="+251911223344", defaults={"full_name": "Abebe Kebede", "email": "abebe@example.com"})
@@ -161,16 +161,16 @@ class Command(BaseCommand):
         CrowdfundingCampaign.objects.get_or_create(title="Help Ummi Fatuma reach Umrah", defaults=dict(
             category="UMRAH", beneficiary_name="Fatuma Ali (72), Addis Ababa", goal_amount=Decimal("185000"),
             story="Ummi Fatuma has served tea at our neighbourhood masjid for 30 years and has always dreamed of "
-                  "Umrah. Your Sadaqah goes 100% to her Umrah package – Rihla's 5% platform fee is shown separately.",
+                  "Umrah. Your Sadaqah goes 100% to her Umrah package – Vacation Equb's 5% platform fee is shown separately.",
             starts_at=now - timedelta(days=3), is_featured=True, created_by=admin))
         CrowdfundingCampaign.objects.get_or_create(title="Hajj fund for our Imam", defaults=dict(
             category="HAJJ", beneficiary_name="Imam Abdulkadir, Dessie", goal_amount=Decimal("650000"),
             story="The community of Dessie is gathering Hibah so our Imam can perform Hajj this year.",
             starts_at=now - timedelta(days=1), created_by=admin))
         Giveaway.objects.get_or_create(title="Umrah Giveaway", defaults=dict(
-            description="One Umrah Economy package, fully paid by Rihla. Entry is free – invite 10 friends who "
-                        "register on Rihla and you get an entry.",
-            sponsor_type="COMPANY", sponsor_name="Rihla Travel", sponsor_note="Paid from Rihla's marketing budget.",
+            description="One Umrah Economy package, fully paid by Vacation Equb. Entry is free – invite 10 friends who "
+                        "register on Vacation Equb and you get an entry.",
+            sponsor_type="COMPANY", sponsor_name="Vacation Equb", sponsor_note="Paid from Vacation Equb's marketing budget.",
             prize_type="TRAVEL_PACKAGE", prize_title="Umrah Economy package for one", prize_value=Decimal("185000"),
             prize_package=pk_objs["UMRAH"], number_of_winners=1, starts_at=now - timedelta(days=1),
             ends_at=now + timedelta(days=21), draw_at=now + timedelta(days=21, hours=1), is_featured=True))

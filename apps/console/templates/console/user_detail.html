@@ -3,7 +3,13 @@
 {% block crumbs %}<a href="{% url 'console:users' %}">Customers</a> / {{ u.full_name }}{% endblock %}
 {% block actions %}{% if not u.is_staff %}<a class="btn {% if not u.has_usable_password %}gold{% else %}ghost{% endif %}" href="{% url 'console:user_edit' u.pk %}">{% if not u.has_usable_password %}Set password{% else %}Edit profile &amp; password{% endif %}</a>{% endif %}{% endblock %}
 {% block content %}
-{% if not u.is_staff and not u.has_usable_password %}<div class="msg warning" style="display:flex;justify-content:space-between;align-items:center;gap:12px">This customer was registered at the desk and has no password yet, so they can't sign in to the app. <a class="btn sm" href="{% url 'console:user_edit' u.pk %}">Set a password</a></div>{% endif %}
+{% if u.deletion_status == 'PENDING' %}<div class="msg error" style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+  <div><b>Account deletion requested</b> on {{ u.deletion_requested_at|date:"d M Y H:i" }} – the account is suspended until you decide.
+    {% if u.deletion_reason %}<div class="small">Reason: “{{ u.deletion_reason }}”</div>{% endif %}
+    {% if blockers.live_equbs or blockers.upcoming_trips %}<div class="small">Check first: {{ blockers.live_equbs }} live Equb place{{ blockers.live_equbs|pluralize }}, {{ blockers.upcoming_trips }} upcoming trip{{ blockers.upcoming_trips|pluralize }}.</div>{% endif %}</div>
+  <a class="btn sm" href="{% url 'console:deletion_requests' %}">Review request</a></div>
+{% elif u.deletion_status == 'DELETED' %}<div class="msg warning">This account was deleted on {{ u.deletion_reviewed_at|date:"d M Y" }}. Personal data has been erased; only anonymous records remain.</div>{% endif %}
+{% if not u.is_staff and not u.has_usable_password and not u.deletion_status %}<div class="msg warning" style="display:flex;justify-content:space-between;align-items:center;gap:12px">This customer was registered at the desk and has no password yet, so they can't sign in to the app. <a class="btn sm" href="{% url 'console:user_edit' u.pk %}">Set a password</a></div>{% endif %}
 <div class="hero">
   <div style="display:flex;gap:18px;align-items:center"><span class="avatar lg" style="background:var(--gold);color:var(--green)">{{ u.full_name|initials }}</span>
     <div><div class="muted small">Customer since {{ u.date_joined|date:"d M Y" }}{% if u.referred_by %} · referred by {{ u.referred_by.full_name }}{% endif %}</div><h2>{{ u.full_name }}</h2><div class="muted">{{ u.phone }}{% if u.email %} · {{ u.email }}{% endif %} · code <span class="mono">{{ u.referral_code }}</span></div></div></div>

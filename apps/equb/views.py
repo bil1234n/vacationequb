@@ -3,6 +3,7 @@ from decimal import Decimal, InvalidOperation
 
 from django.db.models import Count, F, Q
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from drf_spectacular.utils import extend_schema
 from rest_framework import mixins, permissions, status, viewsets
 from rest_framework.decorators import action
@@ -12,14 +13,14 @@ from apps.core.permissions import IsStaffOrReadOnly
 from apps.payments.serializers import PayRequestSerializer, PaymentTransactionSerializer
 from apps.travel.models import Booking
 
-from . import operations, services, teams
+from . import operations, scheduled, services, teams
 from . import standing as standing_mod
 from .models import (Contribution, EqubGroup, EqubMembership, EqubPackage, EqubPayment, EqubPayout, EqubRound,
-                     EqubSettings, GroupEqub, GroupEqubInvite, is_monthly)
+                     EqubSettings, GroupEqub, GroupEqubInvite, ScheduledPayment, is_monthly)
 from .serializers import (ContributionSerializer, DependentSerializer, GroupEqubCreateSerializer, InviteIdSerializer, InvitePhoneSerializer, RemoveMemberSerializer, EqubGroupDetailSerializer, EqubGroupListSerializer,
                           EqubGroupWriteSerializer, EqubPaymentSerializer, EqubPayoutSerializer, EqubRoundSerializer,
                           ExitRequestSerializer, JoinByCodeSerializer, MemberPaySerializer, MembershipSerializer,
-                          RedeemSerializer, rules_summary)
+                          RedeemSerializer, ScheduledPaymentCreateSerializer, rules_summary, terms_lines)
 
 
 class EqubPackageViewSet(viewsets.ReadOnlyModelViewSet):
@@ -39,8 +40,8 @@ class EqubPackageViewSet(viewsets.ReadOnlyModelViewSet):
         from django.db.models import Count
 
         return (EqubPackage.objects.filter(is_active=True).prefetch_related("groups")
-                .annotate(open_groups=Count("groups", filter=Q(groups__status=EqubGroup.Status.OPEN,
-                                                               ))))
+                .annotate(open_groups=Count("groups", filter=Q(groups__status__in=[EqubGroup.Status.OPEN,
+                                                                                   EqubGroup.Status.ACTIVE]))))
 
 
 class EqubGroupViewSet(viewsets.ModelViewSet):
@@ -72,7 +73,7 @@ class EqubGroupViewSet(viewsets.ModelViewSet):
             qs = qs.filter(status__in=[x for x in qp["statuses"].upper().split(",") if x])
         if qp.get("has_spots") in ("1", "true"):
             qs = qs.annotate(_n=Count("memberships", filter=~Q(memberships__status=EqubMembership.Status.LEFT))) \
-                   .filter(status=EqubGroup.Status.OPEN, _n__lt=F("max_members"))
+                   .filter(status__in=[EqubGroup.Status.OPEN, EqubGroup.Status.ACTIVE], _n__lt=F("max_members"))
         user = self.request.user
         if user.is_staff:
             return qs
@@ -97,6 +98,13 @@ class EqubGroupViewSet(viewsets.ModelViewSet):
         data["membership_id"] = membership.id
         return Response(data, status=status.HTTP_201_CREATED)
 
+    @action(detail=True, methods=["post"], url_path="request-join", permission_classes=[permissions.IsAuthenticated])
+    def request_join(self, request, slug=None):
+        """Ask to join again after being removed – staff approve it in the console."""
+        group = self.get_object()
+        operations.request_rejoin(request.user, group, str(request.data.get("message", "")))
+        return Response(EqubGroupDetailSerializer(group, context={"request": request}).data, status=status.HTTP_201_CREATED)
+
     @extend_schema(request=JoinByCodeSerializer)
     @action(detail=False, methods=["post"], url_path="join-by-code", permission_classes=[permissions.IsAuthenticated])
     def join_by_code(self, request):
@@ -119,13 +127,14 @@ class EqubGroupViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["get"])
     def rounds(self, request, slug=None):
-        return Response(EqubRoundSerializer(self.get_object().rounds.select_related("draw"), many=True).data)
+        return Response(EqubRoundSerializer(self.get_object().rounds.select_related("draw"), many=True,
+                                            context={"request": request}).data)
 
     @action(detail=True, methods=["get"])
     def ledger(self, request, slug=None):
         """Transparent member ledger (phone numbers masked)."""
         group = self.get_object()
-        return Response({"group": group.slug, **services.group_totals(group), "members": services.member_ledger(group)})
+        return Response({"group": group.slug, **services.group_totals(group), "members": services.member_ledger(group, request.user)})
 
 
 class EqubRoundViewSet(viewsets.ReadOnlyModelViewSet):
@@ -183,7 +192,8 @@ class EqubRoundViewSet(viewsets.ReadOnlyModelViewSet):
 
 def _payment_history(m: EqubMembership) -> list[dict]:
     """App payments, office payments and (older) single-round payments, newest first."""
-    rows = EqubPaymentSerializer(m.payments.exclude(status=EqubPayment.Status.CANCELLED).select_related("membership__group")[:50],
+    rows = EqubPaymentSerializer(m.payments.exclude(status=EqubPayment.Status.CANCELLED)
+                                 .select_related("membership__group", "transaction")[:50],
                                  many=True).data
     ct = ContentType.objects.get_for_model(Contribution)
     legacy = {c.payment_id: c for c in Contribution.objects.filter(membership=m, payment__isnull=False,
@@ -196,12 +206,18 @@ def _payment_history(m: EqubMembership) -> list[dict]:
                      "rounds_requested": 1, "method": t.provider, "method_display": t.get_provider_display(),
                      "status": "PAID", "status_display": "Paid", "external_reference": "", "is_office": t.is_office,
                      "paid_at": t.completed_at.isoformat() if t.completed_at else None, "created_at": t.created_at.isoformat(),
-                     "rounds": [c.round.number], "credit_after": None, "note": ""})
+                     "rounds": [c.round.number], "credit_after": None, "note": "", "checkout": None})
     rows.sort(key=lambda r: r.get("paid_at") or r.get("created_at") or "", reverse=True)
     return rows
 
 
 def membership_detail(m: EqubMembership, request) -> dict:
+    if m.group.status == EqubGroup.Status.COMPLETED:
+        services.reopen_if_short(m.group)  # finished before everyone paid the full price per person
+        m.refresh_from_db()
+        m.group.refresh_from_db()
+    scheduled.dispatch_due(membership=m)  # calendar payments whose time has come (if the scheduler hasn't run)
+    services.expire_pending_payments(membership=m)  # unfinished payments past the time limit
     rules = EqubSettings.load()
     st = standing_mod.standing_for(m, rules)
     g = m.group
@@ -211,15 +227,18 @@ def membership_detail(m: EqubMembership, request) -> dict:
     if current:
         pool = services.draw_pool(current, rules)
         entry = next((e for e in pool["entries"] if e["membership_id"] == m.id), None)
-        current_data = {**EqubRoundSerializer(current).data, "eligible_count": pool["eligible_count"],
+        current_data = {**EqubRoundSerializer(current, context={"request": request}).data, "eligible_count": pool["eligible_count"],
                         "odds_percent": pool["odds_percent"],
                         "me": {"eligible": entry["eligible"], "reasons": entry["reasons"]} if entry else None}
     group_data = EqubGroupListSerializer(g).data
     group_data.update({"late_fee": str(g.late_fee), "grace_days": g.grace_days, "service_fee_percent": str(g.service_fee_percent),
                        "require_paid_to_draw": g.require_paid_to_draw, "payout_basis": g.payout_basis,
                        "package_name": g.equb_package.name if g.equb_package_id else None, "join_code": g.join_code,
-                       "winners_per_round": g.winners_per_round})
+                       "winners_per_round": g.winners_per_round, "terms_content": terms_lines(g),
+                       "price_per_person": str(g.price_per_person), "payment_rounds": g.payment_rounds})
+    rejoin = operations.rejoin_info(request.user, g) if (not m.is_live and m.user_id == request.user.id) else None
     return {
+        "rejoin": rejoin,
         "id": m.id, "position": m.position, "status": m.status, "status_display": m.get_status_display(),
         "has_won": m.has_won, "won_round": st.won_round, "total_paid": str(m.total_paid), "created_at": m.created_at,
         "group": group_data, "standing": st.as_dict(), "schedule": standing_mod.schedule_for(m),
@@ -278,6 +297,15 @@ class MembershipViewSet(viewsets.ReadOnlyModelViewSet):
     @action(detail=True, methods=["get"])
     def payments(self, request, pk=None):
         return Response(_payment_history(self.get_object()))
+
+    @action(detail=True, methods=["post"], url_path="cancel-payment")
+    def cancel_payment(self, request, pk=None):
+        """Cancel one of my payments that is still waiting (Chapa is checked first – a paid one is kept)."""
+        m = self.get_object()
+        pid = str(request.data.get("payment_id", ""))
+        record = get_object_or_404(EqubPayment, pk=int(pid) if pid.isdigit() else 0, membership=m)
+        record = services.cancel_pending_payment(record)
+        return Response({"status": record.status, "membership": membership_detail(m, request)})
 
     @extend_schema(request=ExitRequestSerializer)
     @action(detail=True, methods=["post"], url_path="request-exit")
@@ -389,7 +417,7 @@ class GroupEqubViewSet(viewsets.GenericViewSet):
 
     @action(detail=False, methods=["get"], url_path="lookup-phone")
     def lookup_phone(self, request):
-        """Is this full phone number a Rihla customer? ``?phone=+251912345678`` (``&team=<id>`` to check that group)."""
+        """Is this full phone number a Vacation Equb customer? ``?phone=+251912345678`` (``&team=<id>`` to check that group)."""
         team = None
         if request.query_params.get("team"):
             team = self.get_queryset().filter(pk=request.query_params["team"]).first()
@@ -443,3 +471,54 @@ class GroupInviteViewSet(viewsets.GenericViewSet):
     @action(detail=True, methods=["post"])
     def decline(self, request, pk=None):
         return Response(teams.invite_info(teams.respond_invite(request.user, self.get_object(), False)))
+
+
+class ScheduledPaymentViewSet(viewsets.GenericViewSet):
+    """Calendar pay: ``?membership=<id>`` lists them; POST {membership, scheduled_for, rounds, repeat} creates one."""
+
+    permission_classes = [permissions.IsAuthenticated]
+    pagination_class = None
+    serializer_class = ScheduledPaymentCreateSerializer
+
+    def get_queryset(self):
+        if getattr(self, "swagger_fake_view", False):
+            return ScheduledPayment.objects.none()
+        return ScheduledPayment.objects.filter(user=self.request.user).select_related("transaction", "membership__group")
+
+    def list(self, request):
+        qs = self.get_queryset()
+        mid = request.query_params.get("membership")
+        if mid and mid.isdigit():
+            m = get_object_or_404(EqubMembership, pk=mid, user=request.user)
+            scheduled.dispatch_due(membership=m)  # the scheduler may not have run yet
+            qs = qs.filter(membership=m)
+        else:  # the app's "time to pay" check: send my bills whose time has come
+            for sp in list(qs.filter(status=ScheduledPayment.Status.SCHEDULED, scheduled_for__lte=timezone.now())[:20]):
+                scheduled.send(sp)
+        recent = qs.exclude(status=ScheduledPayment.Status.CANCELLED).order_by("-scheduled_for")[:40]
+        rows = sorted((scheduled.serialize(sp) for sp in recent), key=lambda r: r["scheduled_for"])
+        return Response(rows)
+
+    def create(self, request):
+        s = ScheduledPaymentCreateSerializer(data=request.data)
+        s.is_valid(raise_exception=True)
+        d = s.validated_data
+        m = get_object_or_404(EqubMembership.objects.select_related("group"), pk=d["membership"], user=request.user)
+        sp = scheduled.create(request.user, m, d["scheduled_for"], d.get("rounds", 1), d.get("repeat", "ONCE"))
+        return Response(scheduled.serialize(sp), status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=["post"])
+    def cancel(self, request, pk=None):
+        sp = scheduled.cancel(request.user, get_object_or_404(self.get_queryset(), pk=pk))
+        return Response(scheduled.serialize(sp))
+
+    @action(detail=True, methods=["post"], url_path="send-now")
+    def send_now(self, request, pk=None):
+        """Pay a scheduled payment early: send its Chapa bill right away."""
+        sp = get_object_or_404(self.get_queryset(), pk=pk)
+        if sp.status == ScheduledPayment.Status.SCHEDULED:
+            sp = scheduled.send(sp)
+        if sp.status not in (ScheduledPayment.Status.SENT, ScheduledPayment.Status.PAID):
+            from apps.core.exceptions import BusinessRuleError
+            raise BusinessRuleError(sp.note or "This payment can't be sent.")
+        return Response(scheduled.serialize(sp))

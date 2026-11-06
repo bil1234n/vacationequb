@@ -214,7 +214,7 @@ def terminate(m: EqubMembership, staff, *, reason: str, note: str = "", notify_m
         why = {"NON_PAYMENT": "because contributions were not paid", "MEMBER_REQUEST": "as you requested",
                "UNREACHABLE": "because we could not reach you"}.get(reason, "")
         notify(m.user, Notification.Kind.EQUB_REMINDER, f"Your place in {m.group.name} was cancelled",
-               f"Your Equb place has been cancelled {why}".strip() + ". Please contact Rihla Travel support "
+               f"Your Equb place has been cancelled {why}".strip() + ". Please contact Vacation Equb support "
                "about any contributions you have paid or still owe.", {"equb": m.group.slug, "membership": m.id})
     return t
 
@@ -312,3 +312,97 @@ def escalate_standings(rules: EqubSettings | None = None, today: date | None = N
         if fields:
             EqubMembership.objects.filter(pk=m.pk).update(**fields)
     return out
+
+
+# --------------------------------------------------------------------------- re-joining after removal
+def previous_place(user, group: EqubGroup) -> EqubMembership | None:
+    """The user's own (not dependant) place in ``group`` if it was closed – terminated, or left after the start."""
+    if not getattr(user, "is_authenticated", False):
+        return None
+    m = group.memberships.filter(user=user, dependent_name="").first()
+    if m is None:
+        return None
+    if m.status == EqubMembership.Status.DEFAULTED:
+        return m
+    if m.status == EqubMembership.Status.LEFT and (m.exit_requested_at or m.terminations.exists()
+                                                   or group.status != EqubGroup.Status.OPEN):
+        return m
+    return None
+
+
+def rejoin_info(user, group: EqubGroup) -> dict | None:
+    from .models import JoinRequest
+
+    m = previous_place(user, group)
+    if m is None:
+        return None
+    req = JoinRequest.objects.filter(group=group, user=user).order_by("-created_at").first()
+    return {"needs_approval": True, "previous_position": m.position,
+            "request": {"id": req.id, "status": req.status, "status_display": req.get_status_display(),
+                        "created_at": req.created_at.isoformat(), "staff_note": req.staff_note} if req else None,
+            "can_request": (group.status in (EqubGroup.Status.OPEN, EqubGroup.Status.ACTIVE)
+                            and not (req and req.status == JoinRequest.Status.PENDING))}
+
+
+@transaction.atomic
+def request_rejoin(user, group: EqubGroup, message: str = ""):
+    from .models import JoinRequest
+
+    m = previous_place(user, group)
+    if m is None:
+        raise BusinessRuleError("You can join this Equb directly.")
+    if group.status not in (EqubGroup.Status.OPEN, EqubGroup.Status.ACTIVE):
+        raise BusinessRuleError("This Equb is not accepting members.")
+    if JoinRequest.objects.filter(group=group, user=user, status=JoinRequest.Status.PENDING).exists():
+        raise BusinessRuleError("Your request is already waiting for approval.")
+    req = JoinRequest.objects.create(group=group, user=user, membership=m, message=(message or "").strip()[:500])
+    notify(user, Notification.Kind.EQUB_REMINDER, "Request to rejoin sent",
+           f"We received your request to join {group.name} again. You'll get a message when our team decides.",
+           {"equb": group.slug, "join_request": req.id})
+    return req
+
+
+@transaction.atomic
+def decide_rejoin(req, staff, *, approve: bool, note: str = "") -> EqubMembership | None:
+    from . import services
+    from .models import JoinRequest
+
+    req = JoinRequest.objects.select_for_update().select_related("group", "user").get(pk=req.pk)
+    if req.status != JoinRequest.Status.PENDING:
+        raise BusinessRuleError("This request was already handled.")
+    group = req.group
+    req.decided_by, req.decided_at, req.staff_note = staff, timezone.now(), (note or "").strip()[:255]
+    if not approve:
+        req.status = JoinRequest.Status.REJECTED
+        req.save(update_fields=["status", "decided_by", "decided_at", "staff_note", "updated_at"])
+        notify(req.user, Notification.Kind.EQUB_REMINDER, f"Request to rejoin {group.name}",
+               "Your request to join again was not approved." + (f" {req.staff_note}" if req.staff_note else ""),
+               {"equb": group.slug, "join_request": req.id})
+        return None
+    if group.status not in (EqubGroup.Status.OPEN, EqubGroup.Status.ACTIVE):
+        raise BusinessRuleError("This Equb is not accepting members any more.")
+    if group.members_count >= group.max_members:
+        raise BusinessRuleError("This Equb is full.")
+    m = group.memberships.select_for_update().filter(user=req.user, dependent_name="").first()
+    if m is None or m.is_live:
+        raise BusinessRuleError("This person already has a place in the Equb.")
+    open_termination = m.terminations.filter(reinstated_at__isnull=True).order_by("-created_at").first()
+    if m.status == EqubMembership.Status.DEFAULTED and open_termination and group.status == EqubGroup.Status.ACTIVE:
+        m = reinstate(open_termination, staff, notify_member=False)
+    else:
+        m.status = EqubMembership.Status.WON if m.has_won else EqubMembership.Status.ACTIVE
+        m.ended_at = None
+        m.exit_requested_at = None
+        m.standing_notified = ""
+        m.save(update_fields=["status", "ended_at", "exit_requested_at", "standing_notified", "updated_at"])
+        if open_termination:
+            open_termination.reinstated_at, open_termination.reinstated_by = timezone.now(), staff
+            open_termination.save(update_fields=["reinstated_at", "reinstated_by", "updated_at"])
+        services.sync_running_group(group)
+    req.status, req.membership = JoinRequest.Status.APPROVED, m
+    req.save(update_fields=["status", "membership", "decided_by", "decided_at", "staff_note", "updated_at"])
+    notify(req.user, Notification.Kind.EQUB_REMINDER, f"Welcome back to {group.name}",
+           f"Your request was approved – you hold place #{m.position} again."
+           + (" You can pay now." if group.status == EqubGroup.Status.ACTIVE else ""),
+           {"equb": group.slug, "membership": m.id})
+    return m

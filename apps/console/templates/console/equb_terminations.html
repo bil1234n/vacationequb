@@ -23,6 +23,28 @@
   {% empty %}<tr><td colspan="8" class="empty">No terminations yet.</td></tr>{% endfor %}</tbody>
 </table></div>{% include "console/_pagination.html" %}</div>
 
+{% elif tab == 'rejoin' %}
+<div class="note-box green">People whose place was cancelled (or who left after the Equb started) asking to join again. Approving gives them their old place back and bills them from the current round.</div>
+<div class="card mt"><div class="table-wrap"><table class="t">
+  <thead><tr><th>Asked</th><th>Member</th><th>Equb</th><th>Earlier place</th><th>Message</th><th></th></tr></thead>
+  <tbody>{% for r in page %}<tr>
+    <td class="small">{{ r.created_at|date:"d M Y H:i" }}</td>
+    <td>{% if r.membership_id %}<a class="strong" href="{% url 'console:equb_member' r.membership_id %}">{{ r.user.full_name }}</a>{% else %}<span class="strong">{{ r.user.full_name }}</span>{% endif %}<div class="small">{{ r.user.phone|tel }}</div></td>
+    <td class="small"><a href="{% url 'console:equb' r.group.slug %}">{{ r.group.name }}</a><div class="muted">{{ r.group.members_count }}/{{ r.group.max_members }} members · {{ r.group.get_status_display }}</div></td>
+    <td class="small">{% if r.membership %}#{{ r.membership.position }} · {{ r.membership.get_status_display }}{% if r.membership.has_won %} · 🏆 had won{% endif %}{% else %}—{% endif %}</td>
+    <td class="small" style="max-width:240px">{% if r.message %}“{{ r.message|truncatechars:120 }}”{% else %}<span class="muted">No message</span>{% endif %}</td>
+    <td class="r"><div class="actions">
+      <form method="post" data-confirm="Let {{ r.user.full_name }} back into {{ r.group.name }}?">{% csrf_token %}<input type="hidden" name="action" value="approve_rejoin"><input type="hidden" name="join_request" value="{{ r.pk }}"><input type="hidden" name="next" value="{{ request.get_full_path }}"><button class="btn sm">Approve</button></form>
+      <button class="btn ghost sm" data-open="rejoin-dialog" data-fill='{"join_request":"{{ r.pk }}","who":"{{ r.user.full_name|escapejs }}"}'>Decline</button>
+    </div></td></tr>
+  {% empty %}<tr><td colspan="6" class="empty">No one is asking to rejoin.</td></tr>{% endfor %}</tbody>
+</table></div>{% include "console/_pagination.html" %}</div>
+<dialog class="modal" id="rejoin-dialog"><form method="post">{% csrf_token %}<input type="hidden" name="action" value="decline_rejoin"><input type="hidden" name="join_request"><input type="hidden" name="next" value="{{ request.get_full_path }}">
+  <div class="modal-h"><h3>Decline – <span data-text="who"></span></h3><button type="button" class="x" data-close>&times;</button></div>
+  <div class="modal-b"><div class="field"><label>Message to the member</label><textarea name="note" rows="3" placeholder="e.g. Please clear what you owe first."></textarea></div></div>
+  <div class="modal-f"><button type="button" class="btn ghost" data-close>Cancel</button><button class="btn">Decline request</button></div>
+</form></dialog>
+
 {% else %}
 {% if tab == 'exits' %}<div class="note-box green">Members ask to leave a running Equb from the app. Approving closes the place (recorded as “Member asked to leave”); declining keeps it and sends them your message.</div>
 {% elif tab == 'candidates' %}<div class="note-box">Places {{ rules.terminate_after_days }}+ days overdue that aren't on the termination list yet. Call them first – add them to the list if they can't pay.</div>

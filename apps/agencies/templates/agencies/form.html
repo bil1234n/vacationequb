@@ -1,0 +1,22 @@
+{% extends "agencies/base.html" %}{% load console_tags %}
+{% block title %}{{ title }}{% endblock %}{% block heading %}{{ title }}{% endblock %}
+{% block content %}
+<form method="post" class="form-page" novalidate>{% csrf_token %}
+  {% if form.non_field_errors %}<div class="msg error">{{ form.non_field_errors|join:" " }}</div>{% endif %}
+  {% if form.errors %}<div class="msg error">Please fix the highlighted fields below.</div>{% endif %}
+  {% for stitle, help, names in form.sections %}
+  <section class="card form-section">
+    {% if stitle or help %}<div class="form-section-h">{% if stitle %}<h2>{{ stitle }}</h2>{% endif %}{% if help %}<p class="muted">{{ help }}</p>{% endif %}</div>{% endif %}
+    <div class="form-grid">
+      {% for name in names %}{% with bf=form|field:name %}{% if bf %}{% include "console/_field.html" with bf=bf %}{% endif %}{% endwith %}{% endfor %}
+    </div>
+  </section>
+  {% endfor %}
+  <div class="form-actions">
+    <span class="grow"></span>
+    <a class="btn ghost" href="{{ cancel }}">Cancel</a>
+    {% if another %}<button class="btn ghost" type="submit" name="_another" value="1">Save &amp; add another</button>{% endif %}
+    <button class="btn" type="submit">{% if obj %}Save changes{% else %}Save{% endif %}</button>
+  </div>
+</form>
+{% endblock %}

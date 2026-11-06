@@ -64,6 +64,14 @@ class PaymentTransaction(TimeStampedModel):
                                     related_name="+", help_text="Staff member who recorded an office payment")
     refunded_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
 
+    # Travel agency sales: the agency keeps the rest, Vacation Equb keeps ``platform_fee``.
+    agency = models.ForeignKey("agencies.Agency", null=True, blank=True, on_delete=models.PROTECT,
+                               related_name="payments", help_text="Travel agency this sale belongs to")
+    platform_fee = models.DecimalField(max_digits=12, decimal_places=2, default=0,
+                                       help_text="Vacation Equb's commission on an agency sale")
+    split_settled = models.BooleanField(default=False,
+                                        help_text="Chapa paid the agency's share directly (split payment)")
+
     class Meta:
         ordering = ["-created_at"]
         indexes = [models.Index(fields=["content_type", "object_id"])]

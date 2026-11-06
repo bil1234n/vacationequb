@@ -82,7 +82,7 @@ def record_office_payment(booking: Booking, staff, *, method: str, reference: st
 
 # --------------------------------------------------------------------------- cancellations & refunds
 def staff_cancel(booking: Booking, staff, *, reason: str, notify_customer: bool = True) -> Booking:
-    reason = (reason or "").strip() or "Cancelled by Rihla Travel"
+    reason = (reason or "").strip() or "Cancelled by Vacation Equb"
     return cancel_booking(booking, reason, staff=staff, notify_customer=notify_customer)
 
 
@@ -219,7 +219,7 @@ def find_for_desk(query: str) -> tuple[Booking | None, Ticket | None, str]:
     if len(q) > 20:  # QR payloads are long signed tokens
         data = verify_payload(q)
         if not data:
-            return None, None, "This QR code is not a valid Rihla ticket (signature check failed)."
+            return None, None, "This QR code is not a valid Vacation Equb ticket (signature check failed)."
         ticket = Ticket.objects.select_related("booking").filter(ticket_number=data.get("t")).first()
         if not ticket:
             return None, None, "The QR code is genuine but the ticket no longer exists."

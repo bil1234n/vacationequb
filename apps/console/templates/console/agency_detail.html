@@ -1,0 +1,63 @@
+{% extends "console/base.html" %}{% load console_tags %}
+{% block title %}{{ a.name }}{% endblock %}{% block heading %}{{ a.name }}{% endblock %}
+{% block crumbs %}<a href="{% url 'console:agencies' %}">Travel agencies</a> / {{ a.get_status_display }}{% endblock %}
+{% block actions %}<a class="btn ghost" href="{% url 'console:agency_edit' a.pk %}">Edit</a>{% endblock %}
+{% block content %}
+<div class="grid g-4">
+  <div class="card kpi dark"><div class="label">Sales</div><div class="value">{{ total.gross|compact }} <small style="font-size:14px">ETB</small></div><div class="sub">{{ total.sales }} sale{{ total.sales|pluralize }}</div></div>
+  <div class="card kpi gold"><div class="label">Our commission ({{ a.commission_percent|floatformat:"-2" }}%)</div><div class="value">{{ total.commission|compact }} <small style="font-size:14px">ETB</small></div><div class="sub">&nbsp;</div></div>
+  <div class="card kpi"><div class="label">Agency's share</div><div class="value">{{ total.share|compact }} <small style="font-size:14px">ETB</small></div><div class="sub">&nbsp;</div></div>
+  <div class="card kpi"><div class="label">Owed to agency</div><div class="value {% if total.owed %}red{% endif %}">{{ total.owed|compact }} <small style="font-size:14px">ETB</small></div><div class="sub">{{ n_customers }} customer{{ n_customers|pluralize }}</div></div>
+</div>
+
+<div class="grid g-2 mt">
+  <div class="card"><div class="card-h"><h2>Chapa payout (split payment)</h2>{% if a.chapa_subaccount_id %}<span class="badge b-green">Linked</span>{% else %}<span class="badge b-grey">Not linked</span>{% endif %}</div>
+    <dl class="kv"><dt>Bank</dt><dd>{{ a.bank_name|default:"—" }}</dd><dt>Account holder</dt><dd>{{ a.account_name|default:"—" }}</dd>
+      <dt>Account number</dt><dd class="mono">{{ a.account_number|default:"—" }}</dd>
+      <dt>Subaccount</dt><dd class="mono small">{{ a.chapa_subaccount_id|default:"—" }}</dd></dl>
+    {% if not a.chapa_subaccount_id %}
+      {% if a.bank_code and a.account_number and a.account_name %}
+      <form method="post" style="margin-top:12px" data-confirm="Register {{ a.account_name }} · {{ a.account_number }} with Chapa? Chapa will then send {{ a.name }} its share of every online sale automatically.">{% csrf_token %}<input type="hidden" name="action" value="subaccount"><button class="btn">Create Chapa subaccount</button></form>
+      {% else %}<p class="small muted">Add the agency's bank, account holder and account number (<a href="{% url 'console:agency_edit' a.pk %}">Edit</a>), then create the subaccount.</p>{% endif %}
+      <p class="small muted" style="margin-bottom:0">Until it is linked, online sales come fully to Vacation Equb and the agency's share shows as owed below.</p>
+    {% else %}<p class="small muted" style="margin-bottom:0">On every online sale Chapa keeps {{ a.commission_percent|floatformat:"-2" }}% for Vacation Equb and settles the rest to this account.</p>{% endif %}
+  </div>
+  <div class="card"><div class="card-h"><h2>Agency</h2>{{ a.status|status_badge:a.get_status_display }}</div>
+    <dl class="kv"><dt>Phone</dt><dd>{{ a.phone }}</dd><dt>Email</dt><dd>{{ a.email|default:"—" }}</dd><dt>Address</dt><dd>{{ a.address|default:"—" }}, {{ a.city }}</dd>
+      <dt>Licence · TIN</dt><dd>{{ a.license_number|default:"—" }} · {{ a.tin|default:"—" }}</dd><dt>Joined</dt><dd>{{ a.created_at|date:"d M Y" }}</dd></dl>
+    <form method="post" class="toolbar" style="margin:12px 0 0">{% csrf_token %}<input type="hidden" name="action" value="status">
+      <select name="status">{% for v, l in statuses %}<option value="{{ v }}" {% if a.status == v %}selected{% endif %}>{{ l }}</option>{% endfor %}</select>
+      <button class="btn ghost sm">Change status</button></form>
+    {% if a.notes %}<p class="small" style="white-space:pre-line">{{ a.notes }}</p>{% endif %}
+  </div>
+</div>
+
+<form method="post" class="card mt" data-confirm="Mark the ticked sales as paid to {{ a.name }}?">{% csrf_token %}<input type="hidden" name="action" value="mark_paid">
+  <div class="card-h"><h2>To pay out</h2><span>{{ total.owed|money }} owed</span></div>
+  <div class="table-wrap"><table class="t"><thead><tr><th></th><th>Date</th><th>Customer</th><th>Sale</th><th class="r">Amount</th><th class="r">Commission</th><th class="r">Agency share</th></tr></thead><tbody>
+  {% for e in owed %}<tr><td><input type="checkbox" name="entries" value="{{ e.pk }}" checked></td><td class="small">{{ e.created_at|date:"d M Y" }}</td><td>{{ e.customer.full_name }}</td>
+    <td>{% if e.booking %}<a class="mono" href="{% url 'console:booking' e.booking.reference %}">{{ e.booking.reference }}</a>{% endif %}<div class="small muted">{{ e.get_kind_display }}</div></td>
+    <td class="r num">{{ e.gross_amount|money }}</td><td class="r num">{{ e.commission|money }}</td><td class="r num strong">{{ e.agency_amount|money }}</td></tr>
+  {% empty %}<tr><td colspan="7" class="empty">Nothing owed – all settled.</td></tr>{% endfor %}</tbody></table></div>
+  {% if owed %}<div class="toolbar" style="margin:12px 0 0"><input class="grow" type="text" name="reference" maxlength="64" placeholder="Bank transfer reference"><button class="btn">Mark ticked as paid</button></div>{% endif %}
+</form>
+
+<div class="grid g-21 mt">
+  <div class="card"><div class="card-h"><h2>All sales</h2></div>
+    <div class="table-wrap"><table class="t"><thead><tr><th>Date</th><th>Customer</th><th>Sale</th><th class="r">Amount</th><th class="r">Commission</th><th>Payout</th></tr></thead><tbody>
+    {% for e in ledger %}<tr><td class="small">{{ e.created_at|date:"d M Y" }}</td><td>{{ e.customer.full_name }}</td><td class="mono small">{{ e.booking.reference|default:"" }}</td>
+      <td class="r num">{{ e.gross_amount|money }}</td><td class="r num">{{ e.commission|money }}</td><td>{% include "agencies/_payout.html" with s=e.payout_status label=e.get_payout_status_display %}</td></tr>
+    {% empty %}<tr><td colspan="6" class="empty">No sales yet.</td></tr>{% endfor %}</tbody></table></div></div>
+  <div>
+    <div class="card"><div class="card-h"><h2>Team</h2></div>
+      {% for s in staff %}<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--line)"><span>{{ s.user.full_name }} <span class="small muted mono">{{ s.user.phone }}</span></span><span class="small">{{ s.get_role_display }}{% if not s.is_active %} · <span class="badge b-red">Disabled</span>{% endif %}</span></div>{% endfor %}
+      <details style="margin-top:12px"><summary class="strong">+ Add a team member</summary>
+        <form method="post" style="margin-top:10px">{% csrf_token %}<input type="hidden" name="action" value="add_staff">
+          {% for bf in staff_form %}{% include "console/_field.html" with bf=bf %}{% endfor %}<button class="btn sm">Add</button></form></details>
+    </div>
+    <div class="card mt"><div class="card-h"><h2>Customers</h2><span>{{ n_customers }}</span></div>
+      {% for c in customers %}<div style="padding:6px 0;border-bottom:1px solid var(--line)"><a href="{% url 'console:user' c.user_id %}">{{ c.user.full_name }}</a> <span class="small muted mono">{{ c.user.phone }}</span></div>
+      {% empty %}<div class="empty">No customers yet.</div>{% endfor %}</div>
+  </div>
+</div>
+{% endblock %}

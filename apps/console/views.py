@@ -1,5 +1,5 @@
 """
-Rihla staff console — a server-rendered web dashboard for operations staff.
+Vacation Equb staff console — a server-rendered web dashboard for operations staff.
 
 Every page is staff-only. Charts are rendered client-side with Chart.js from a
 single JSON config emitted per page (see ``static/console/console.js``).
@@ -23,6 +23,7 @@ from django.utils import timezone
 from django.views.decorators.http import require_POST
 
 from apps.accounts.models import User, normalize_phone
+from apps.accounts.services import approve_deletion, deletion_blockers, restore_account
 from apps.core.exceptions import BusinessRuleError
 from apps.equb.models import Contribution, EqubGroup, EqubMembership, EqubRound
 from apps.luckydraw.models import CrowdfundingCampaign, Donation, Giveaway, GiveawayEntry, GiveawayWinner
@@ -47,8 +48,12 @@ def staff_required(view):
         if not request.user.is_authenticated:
             return redirect(f"{reverse('console:login')}?next={request.get_full_path()}")
         if not request.user.is_staff:
+            from apps.agencies.services import staff_for
+
+            if staff_for(request.user):
+                return redirect("agency:dashboard")
             logout(request)
-            messages.error(request, "The console is for Rihla staff accounts only.")
+            messages.error(request, "The console is for Vacation Equb staff accounts only.")
             return redirect("console:login")
         return view(request, *args, **kwargs)
     return wrapper
@@ -88,16 +93,24 @@ def growth(cur, prev):
 
 # --------------------------------------------------------------------------- auth
 def login_view(request):
+    from apps.agencies.services import staff_for
+
     if request.user.is_authenticated and request.user.is_staff:
         return redirect("console:dashboard")
+    if request.user.is_authenticated and staff_for(request.user):
+        return redirect("agency:dashboard")
     error = None
     if request.method == "POST":
         phone = normalize_phone(request.POST.get("phone", ""))
         user = authenticate(request, username=phone, password=request.POST.get("password", ""))
         if user is None:
             error = "Incorrect phone number or password."
+        elif not user.is_staff and staff_for(user):
+            login(request, user)
+            nxt = request.GET.get("next", "")
+            return redirect(nxt if nxt.startswith("/agency/") else "agency:dashboard")
         elif not user.is_staff:
-            error = "This account does not have staff access."
+            error = "This account does not have staff access or agency access."
         else:
             login(request, user)
             nxt = request.GET.get("next", "")
@@ -161,7 +174,7 @@ def dashboard(request):
     equb_saved = Contribution.objects.filter(status="PAID", paid_at__gte=since).aggregate(s=Sum("amount"))["s"] or 0
     gifts = Donation.objects.filter(status="PAID", paid_at__gte=since).aggregate(s=Sum("amount"), f=Sum("fee_amount"))
     crowd_raised, crowd_fees = gifts["s"] or 0, gifts["f"] or 0
-    rate = Decimal(str(settings.RIHLA["COMPANY_PROFIT_PERCENT"]))
+    rate = Decimal(str(settings.VACATION["COMPANY_PROFIT_PERCENT"]))
     profit = (Decimal(revenue) * rate / 100).quantize(Decimal("0.01"))
     profit_prev = Decimal(revenue_prev) * rate / 100
 
@@ -232,8 +245,15 @@ def _attention() -> dict:
         "holds": Booking.objects.filter(status="PENDING_PAYMENT", expires_at__gt=timezone.now()).count(),
         "refunds": travel_ops.refunds_due().count() + travel_ops.paid_after_expiry().count(),
         "exits": M.objects.filter(exit_requested_at__isnull=False, status__in=M.LIVE_STATUSES).count(),
-        "terminations": M.objects.filter(termination_requested_at__isnull=False, status__in=M.LIVE_STATUSES).count(),
+        "terminations": M.objects.filter(termination_requested_at__isnull=False, status__in=M.LIVE_STATUSES).count()
+        + _pending_rejoins(),
     }
+
+
+def _pending_rejoins() -> int:
+    from apps.equb.models import JoinRequest
+
+    return JoinRequest.objects.filter(status=JoinRequest.Status.PENDING).count()
 
 
 def _with_standing(memberships):
@@ -413,4 +433,47 @@ def user_detail(request, pk):
         "wins": GiveawayWinner.objects.filter(user=u).select_related("giveaway"),
         "payments": PaymentTransaction.objects.filter(user=u)[:15],
         "referrals": u.referrals.all()[:10],
+        "blockers": deletion_blockers(u) if u.deletion_pending else None,
     })
+
+
+# --------------------------------------------------------------------------- account deletion requests
+@staff_required
+def deletion_requests(request):
+    """Customers who asked to delete their account (suspended until staff approve or restore)."""
+    tab = request.GET.get("tab", "pending")
+    if tab == "done":
+        qs = (User.objects.filter(deletion_reviewed_at__isnull=False)
+              .select_related("deletion_reviewed_by").order_by("-deletion_reviewed_at"))
+    else:
+        tab = "pending"
+        qs = User.objects.filter(deletion_status=User.DeletionStatus.PENDING).order_by("deletion_requested_at")
+    pg = page(request, qs)
+    if tab == "pending":
+        for u in pg:
+            u.blockers = deletion_blockers(u)
+    return render(request, "console/deletion_requests.html", {
+        "nav": "deletions", "page": pg, "tab": tab,
+        "pending_count": User.objects.filter(deletion_status=User.DeletionStatus.PENDING).count(),
+    })
+
+
+@staff_required
+@require_POST
+def deletion_decide(request, pk):
+    u = get_object_or_404(User, pk=pk, is_staff=False)
+    action, note = request.POST.get("action"), request.POST.get("note", "").strip()
+    if not u.deletion_pending:
+        messages.error(request, "This account has no pending deletion request.")
+    elif action == "approve":
+        name = u.full_name
+        approve_deletion(u, by=request.user, note=note)
+        messages.success(request, f"{name}'s account was deleted. Their personal data is gone; payment and booking "
+                                  f"records are kept without their name.")
+    elif action == "restore":
+        restore_account(u, by=request.user, note=note)
+        messages.success(request, f"{u.full_name}'s account was restored – they can sign in again.")
+    else:
+        messages.error(request, "Choose approve or restore.")
+    nxt = request.POST.get("next", "")
+    return redirect(nxt if nxt.startswith("/console/") else "console:deletion_requests")

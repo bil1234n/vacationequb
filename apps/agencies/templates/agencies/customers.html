@@ -1,0 +1,18 @@
+{% extends "agencies/base.html" %}{% load console_tags %}
+{% block title %}Customers{% endblock %}{% block heading %}Customers &amp; families{% endblock %}{% block crumbs %}{{ total }} customer{{ total|pluralize }}{% endblock %}
+{% block actions %}<a class="btn" href="{% url 'agency:customer_add' %}">+ New customer</a>{% endblock %}
+{% block content %}
+<form class="toolbar" method="get">
+  <input class="grow" type="search" name="q" value="{{ q }}" placeholder="Search a name, phone or family member…">
+  <button class="btn" type="submit">Search</button>
+</form>
+<div class="card"><div class="table-wrap"><table class="t">
+  <thead><tr><th>Customer</th><th>Phone</th><th>Family</th><th>Equb places</th><th>Trips</th><th>App access</th><th>Since</th></tr></thead>
+  <tbody>{% for c in page %}<tr>
+    <td><div style="display:flex;gap:10px;align-items:center"><span class="avatar">{{ c.user.full_name|initials }}</span><a class="strong" href="{% url 'agency:customer' c.pk %}">{{ c.user.full_name }}</a></div></td>
+    <td class="mono">{{ c.user.phone }}</td><td class="num">{{ c.n_family }}</td><td class="num">{{ c.n_equb }}</td><td class="num">{{ c.n_trips }}</td>
+    <td>{% if c.user.has_usable_password %}<span class="badge b-green">Can sign in</span>{% else %}<span class="badge b-grey">No password</span>{% endif %}</td>
+    <td class="small">{{ c.created_at|date:"d M Y" }}</td></tr>
+  {% empty %}<tr><td colspan="7" class="empty">{% if q %}No customer matches “{{ q }}”.{% else %}No customers yet. <a href="{% url 'agency:customer_add' %}">Add your first customer →</a>{% endif %}</td></tr>{% endfor %}</tbody>
+</table></div>{% include "console/_pagination.html" %}</div>
+{% endblock %}

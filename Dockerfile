@@ -7,4 +7,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 RUN DJANGO_SECRET_KEY=build python manage.py collectstatic --noinput || true
 EXPOSE 8000
-CMD ["gunicorn", "rihla.wsgi:application", "--bind", "0.0.0.0:8000", "--workers", "3", "--timeout", "60"]
+CMD ["gunicorn", "vacation.wsgi:application", "--bind", "0.0.0.0:8000", "--workers", "3", "--timeout", "60"]

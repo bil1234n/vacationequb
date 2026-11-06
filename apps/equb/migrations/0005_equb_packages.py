@@ -91,7 +91,7 @@ class Migration(migrations.Migration):
                     "payout_basis",
                     models.CharField(
                         choices=[
-                            ("FULL_POT", "Full pot – Rihla guarantees the payout"),
+                            ("FULL_POT", "Full pot – vacation guarantees the payout"),
                             ("COLLECTED", "Only what was collected by draw day"),
                         ],
                         default="FULL_POT",

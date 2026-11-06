@@ -1,0 +1,36 @@
+{% extends "agencies/base.html" %}{% load console_tags %}
+{% block title %}Dashboard{% endblock %}
+{% block heading %}Welcome, {{ request.user.first_name }}{% endblock %}
+{% block crumbs %}{{ agency.name }} · {% now "F Y" %}{% endblock %}
+{% block actions %}<a class="btn ghost" href="{% url 'agency:customer_add' %}">+ Customer</a><a class="btn" href="{% url 'agency:book' %}">Book a ticket</a>{% endblock %}
+{% block content %}
+<div class="grid g-4">
+  <div class="card kpi dark"><div class="label">Sales this month</div><div class="value">{{ month.gross|compact }} <small style="font-size:14px">ETB</small></div><div class="sub">{{ month.sales }} sale{{ month.sales|pluralize }}</div></div>
+  <div class="card kpi"><div class="label">Your share this month</div><div class="value">{{ month.share|compact }} <small style="font-size:14px">ETB</small></div><div class="sub">after {{ month.commission|money }} platform fee</div></div>
+  <div class="card kpi gold"><div class="label">Owed to you</div><div class="value">{{ total.owed|compact }} <small style="font-size:14px">ETB</small></div><div class="sub">paid out by Vacation Equb</div></div>
+  <div class="card kpi"><div class="label">Customers</div><div class="value">{{ counts.customers }}</div><div class="sub">{{ counts.family }} family member{{ counts.family|pluralize }} · {{ counts.equb }} Equb place{{ counts.equb|pluralize }}</div></div>
+</div>
+
+{% if not agency.chapa_subaccount_id %}<div class="note-box mt">Your bank account is not linked to Chapa yet, so your share of each sale is collected by Vacation Equb and paid out to you. Once it is linked, Chapa sends your share straight to your bank at every payment. <a href="{% url 'agency:profile' %}">See your payout details →</a></div>{% endif %}
+
+<div class="grid g-2 mt">
+  <div class="card"><div class="card-h"><h2>Waiting for payment</h2><a class="small" href="{% url 'agency:bookings' %}?status=PENDING_PAYMENT">All →</a></div>
+    {% for b in pending %}<div style="display:flex;justify-content:space-between;gap:10px;padding:9px 0;border-bottom:1px solid var(--line)">
+      <div><a class="strong mono" href="{% url 'agency:booking' b.reference %}">{{ b.reference }}</a> · {{ b.user.full_name }}<div class="small muted">{{ b.destination_label }} · held until {{ b.expires_at|date:"H:i" }}</div></div>
+      <div class="num strong">{{ b.total_amount|money }}</div></div>
+    {% empty %}<div class="empty">Nothing waiting – every booking is paid.</div>{% endfor %}
+  </div>
+  <div class="card"><div class="card-h"><h2>Latest sales</h2><a class="small" href="{% url 'agency:earnings' %}">Earnings →</a></div>
+    <div class="table-wrap"><table class="t"><thead><tr><th>Date</th><th>Customer</th><th class="r">Sale</th><th class="r">Your share</th><th>Payout</th></tr></thead><tbody>
+    {% for e in recent %}<tr><td class="small">{{ e.created_at|date:"d M" }}</td><td>{{ e.customer.full_name }}{% if e.booking %}<div class="small muted mono">{{ e.booking.reference }}</div>{% endif %}</td>
+      <td class="r num">{{ e.gross_amount|money }}</td><td class="r num strong">{{ e.agency_amount|money }}</td><td>{% include "agencies/_payout.html" with s=e.payout_status label=e.get_payout_status_display %}</td></tr>
+    {% empty %}<tr><td colspan="5" class="empty">No sales yet. <a href="{% url 'agency:book' %}">Book the first ticket →</a></td></tr>{% endfor %}</tbody></table></div>
+  </div>
+</div>
+<div class="grid g-4 mt">
+  <a class="card" href="{% url 'agency:customer_add' %}"><b>1 · Add a customer</b><div class="small muted">Name and phone – their family can be added after.</div></a>
+  <a class="card" href="{% url 'agency:equbs' %}"><b>2 · Join an Equb</b><div class="small muted">Give the customer or a family member a place.</div></a>
+  <a class="card" href="{% url 'agency:book' %}"><b>3 · Book a ticket</b><div class="small muted">Flights and Hajj, Umrah &amp; tour packages.</div></a>
+  <a class="card" href="{% url 'agency:earnings' %}"><b>4 · Get paid</b><div class="small muted">{{ agency.commission_percent|floatformat:"-2" }}% platform fee, the rest is yours.</div></a>
+</div>
+{% endblock %}

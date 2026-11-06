@@ -4,7 +4,7 @@ from apps.core.exceptions import BusinessRuleError
 
 from . import services
 from .models import (CallLog, Contribution, EqubDraw, EqubGroup, EqubMembership, EqubPackage, EqubPayment, EqubPayout, EqubRound,
-                     EqubSettings, GroupEqub, Termination)
+                     EqubSettings, GroupEqub, JoinRequest, ScheduledPayment, Termination)
 
 
 class MembershipInline(admin.TabularInline):
@@ -123,3 +123,18 @@ class GroupEqubAdmin(admin.ModelAdmin):
     list_filter = ["kind", "is_active"]
     search_fields = ["name", "invite_code", "owner__full_name", "owner__phone"]
     raw_id_fields = ["equb", "owner", "created_by"]
+
+
+@admin.register(ScheduledPayment)
+class ScheduledPaymentAdmin(admin.ModelAdmin):
+    list_display = ["membership", "user", "scheduled_for", "rounds", "repeat", "status", "amount", "sent_at"]
+    list_filter = ["status", "repeat"]
+    raw_id_fields = ["membership", "user", "transaction"]
+    search_fields = ["user__phone", "user__full_name", "membership__group__name"]
+
+
+@admin.register(JoinRequest)
+class JoinRequestAdmin(admin.ModelAdmin):
+    list_display = ["user", "group", "status", "created_at", "decided_by", "decided_at"]
+    list_filter = ["status"]
+    raw_id_fields = ["user", "group", "membership", "decided_by"]

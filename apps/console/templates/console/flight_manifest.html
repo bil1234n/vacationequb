@@ -25,5 +25,5 @@
     <td>{% if p.ticket %}{{ p.ticket.status|status_badge }}{% else %}—{% endif %}</td></tr>
   {% empty %}<tr><td colspan="8" class="empty">No confirmed passengers on this flight.</td></tr>{% endfor %}</tbody></table></div>
 </div>
-<p class="small muted" style="margin:12px 4px 0">Printed {{ printed|date:"d M Y, H:i" }} by {{ request.user.full_name }} · Rihla Travel</p>
+<p class="small muted" style="margin:12px 4px 0">Printed {{ printed|date:"d M Y, H:i" }} by {{ request.user.full_name }} · Vacation Equb</p>
 {% endblock %}

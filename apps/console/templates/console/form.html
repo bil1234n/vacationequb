@@ -1,7 +1,7 @@
 {% extends "console/base.html" %}{% load console_tags %}
 {% block title %}{{ title }}{% endblock %}{% block heading %}{{ title }}{% endblock %}{% block crumbs %}{{ crumbs }}{% endblock %}
 {% block content %}
-<form method="post" class="form-page" novalidate>{% csrf_token %}
+<form method="post" class="form-page" enctype="multipart/form-data" novalidate>{% csrf_token %}
   {% if intro %}<div class="msg info">{{ intro }}</div>{% endif %}
   {% if form.non_field_errors %}<div class="msg error">{{ form.non_field_errors|join:" " }}</div>{% endif %}
   {% if form.errors or formset.total_error_count %}<div class="msg error">Please fix the highlighted fields below.</div>{% endif %}

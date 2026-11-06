@@ -194,7 +194,9 @@ def compute(m: EqubMembership, contributions: list[Contribution], rounds: list[E
     missed = len(overdue)
     status = _status(m, group, rules, missed, len(settled), advance_rounds, arrears)
     label, tone = STATUS_META[status]
-    remaining = max(contribution * total_rounds - paid_amount - credit, ZERO) if m.is_live else ZERO
+    # What the member still owes in total: the price per person (contribution × payments) – winners keep paying too.
+    owed_total = Decimal(group.price_per_person) if group.payment_rounds else contribution * total_rounds
+    remaining = max(owed_total - paid_amount - credit, ZERO) if m.is_live else ZERO
     rate = float(round(paid_due / expected_to_date * 100, 1)) if expected_to_date else 100.0
 
     return Standing(
@@ -289,7 +291,8 @@ def schedule_for(m: EqubMembership, today: date | None = None) -> list[dict]:
     rows = []
     for r in rounds:
         c = contribs.get(r.id)
-        winners = [p.membership.user.full_name for p in r.payouts.all()]
+        # Other members stay private: "You" or "Member <place>".
+        winners = ["You" if p.membership.user_id == m.user_id else f"Member {p.membership.position}" for p in r.payouts.all()]
         row = {
             "round": r.number, "round_id": r.id, "due_date": r.due_date.isoformat(), "draw_date": r.draw_date.isoformat(),
             "round_status": r.status, "amount": str(contribution), "late_fee": "0.00", "paid_at": None,

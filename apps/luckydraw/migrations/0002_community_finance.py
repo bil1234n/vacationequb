@@ -57,7 +57,7 @@ def convert_lucky_draws(apps, schema_editor):
             camp = Campaign.objects.create(
                 title=title, slug=slug_for(Campaign, title), category=cat,
                 story=(c.cause or c.description or "Help a member of our community reach their journey.")
-                + "\n\nYour gift goes 100% to the cause. Rihla's platform fee is shown separately at checkout.",
+                + "\n\nYour gift goes 100% to the cause. vacation's platform fee is shown separately at checkout.",
                 image_url=c.image_url, beneficiary_name="A member of our community",
                 goal_amount=max(c.prize_value or D("0"), raised, D("1000")), platform_fee_percent=D("5"),
                 starts_at=c.starts_at, ends_at=None,
@@ -77,10 +77,10 @@ def convert_lucky_draws(apps, schema_editor):
         g = Giveaway.objects.create(
             title=title, slug=slug_for(Giveaway, title),
             description=(c.description or "")
-            + "\n\nThis trip is 100% paid by the sponsor. Entry is free: invite 10 friends who register on Rihla "
+            + "\n\nThis trip is 100% paid by the sponsor. Entry is free: invite 10 friends who register on vacation "
               "and you get one entry.",
-            image_url=c.image_url, sponsor_type="COMPANY", sponsor_name="Rihla Travel",
-            sponsor_note="Paid from Rihla's marketing budget – no donations are used.",
+            image_url=c.image_url, sponsor_type="COMPANY", sponsor_name="vacation Travel",
+            sponsor_note="Paid from vacation's marketing budget – no donations are used.",
             prize_type=c.prize_type, prize_title=c.prize_title, prize_value=c.prize_value,
             prize_package_id=c.prize_package_id, prize_equb_group_id=c.prize_equb_group_id,
             number_of_winners=c.number_of_winners, referrals_per_entry=10,
@@ -223,7 +223,7 @@ class Migration(migrations.Migration):
                     "beneficiary",
                     models.ForeignKey(
                         blank=True,
-                        help_text="Their Rihla account, if any",
+                        help_text="Their vacation account, if any",
                         null=True,
                         on_delete=django.db.models.deletion.SET_NULL,
                         related_name="crowdfunding_campaigns",
@@ -405,7 +405,7 @@ class Migration(migrations.Migration):
                     "sponsor_type",
                     models.CharField(
                         choices=[
-                            ("COMPANY", "Rihla marketing budget"),
+                            ("COMPANY", "vacation marketing budget"),
                             ("CORPORATE", "Corporate sponsor"),
                         ],
                         default="COMPANY",
@@ -414,7 +414,7 @@ class Migration(migrations.Migration):
                 ),
                 (
                     "sponsor_name",
-                    models.CharField(default="Rihla Travel", max_length=120),
+                    models.CharField(default="vacation Travel", max_length=120),
                 ),
                 (
                     "sponsor_note",

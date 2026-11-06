@@ -1,0 +1,68 @@
+{% extends "console/base.html" %}{% load console_tags %}
+{% block title %}Deletion requests{% endblock %}{% block heading %}Account deletion requests{% endblock %}{% block crumbs %}People · Customers{% endblock %}
+{% block actions %}<a class="btn ghost" href="{% url 'console:users' %}">All customers</a>{% endblock %}
+{% block content %}
+<div class="tabs">
+  <a href="?tab=pending" class="{% if tab == 'pending' %}on{% endif %}">Waiting for a decision <span class="count {% if pending_count %}alert{% endif %}">{{ pending_count }}</span></a>
+  <a href="?tab=done" class="{% if tab == 'done' %}on{% endif %}">Decided</a>
+</div>
+
+{% if tab == 'pending' %}
+<div class="note-box">These customers asked to delete their account (in the app or on the website). Their account is <b>suspended</b>: they can't sign in and get no notifications.
+  <b>Approve</b> wipes their name, phone, email, ID and passport details (payments, bookings and Equb records stay, without their name).
+  <b>Restore</b> declines the request and lets them sign in again. Settle live Equb places and upcoming trips first.</div>
+<div class="card mt"><div class="table-wrap"><table class="t">
+  <thead><tr><th>Asked</th><th>Customer</th><th>Reason</th><th>Check first</th><th></th></tr></thead>
+  <tbody>{% for u in page %}<tr>
+    <td class="small">{{ u.deletion_requested_at|date:"d M Y H:i" }}<div class="muted">{{ u.deletion_requested_at|timesince }} ago</div></td>
+    <td><a class="strong" href="{% url 'console:user' u.pk %}">{{ u.full_name }}</a><div class="small">{{ u.phone|tel }}</div></td>
+    <td class="small" style="max-width:280px">{% if u.deletion_reason %}“{{ u.deletion_reason|truncatechars:160 }}”{% else %}<span class="muted">No reason given</span>{% endif %}</td>
+    <td class="small">
+      {% if u.blockers.live_equbs %}<div><span class="badge b-red">{{ u.blockers.live_equbs }} live Equb place{{ u.blockers.live_equbs|pluralize }}</span></div>{% endif %}
+      {% if u.blockers.upcoming_trips %}<div><span class="badge b-gold">{{ u.blockers.upcoming_trips }} upcoming trip{{ u.blockers.upcoming_trips|pluralize }}</span></div>{% endif %}
+      {% if u.blockers.unpaid_bookings %}<div><span class="badge b-grey">{{ u.blockers.unpaid_bookings }} unpaid booking{{ u.blockers.unpaid_bookings|pluralize }}</span></div>{% endif %}
+      {% if not u.blockers.live_equbs and not u.blockers.upcoming_trips and not u.blockers.unpaid_bookings %}<span class="badge b-green">Nothing open</span>{% endif %}
+    </td>
+    <td class="r"><div class="actions">
+      <button class="btn danger sm" data-open="approve-dialog" data-fill='{"action_url":"{% url 'console:deletion_decide' u.pk %}","who":"{{ u.full_name|escapejs }}"}'>Approve &amp; delete</button>
+      <button class="btn ghost sm" data-open="restore-dialog" data-fill='{"action_url":"{% url 'console:deletion_decide' u.pk %}","who":"{{ u.full_name|escapejs }}"}'>Restore</button>
+    </div></td></tr>
+  {% empty %}<tr><td colspan="5" class="empty">No one is waiting – no open deletion requests.</td></tr>{% endfor %}</tbody>
+</table></div>{% include "console/_pagination.html" %}</div>
+
+{% else %}
+<div class="card mt"><div class="table-wrap"><table class="t">
+  <thead><tr><th>Decided</th><th>Account</th><th>Decision</th><th>Reason given</th><th>Staff note</th><th>By</th></tr></thead>
+  <tbody>{% for u in page %}<tr>
+    <td class="small">{{ u.deletion_reviewed_at|date:"d M Y H:i" }}</td>
+    <td>{% if u.deletion_status == 'DELETED' %}<span class="strong muted">Deleted user</span><div class="small muted">#{{ u.pk }}</div>{% else %}<a class="strong" href="{% url 'console:user' u.pk %}">{{ u.full_name }}</a><div class="small">{{ u.phone|tel }}</div>{% endif %}</td>
+    <td>{% if u.deletion_status == 'DELETED' %}<span class="badge b-red">Deleted</span>{% else %}<span class="badge b-green">Restored</span>{% endif %}</td>
+    <td class="small" style="max-width:240px">{{ u.deletion_reason|default:"—"|truncatechars:120 }}</td>
+    <td class="small" style="max-width:220px">{{ u.deletion_note|default:"—" }}</td>
+    <td class="small">{{ u.deletion_reviewed_by.full_name|default:"—" }}</td></tr>
+  {% empty %}<tr><td colspan="6" class="empty">No decisions yet.</td></tr>{% endfor %}</tbody>
+</table></div>{% include "console/_pagination.html" %}</div>
+{% endif %}
+
+<dialog class="modal" id="approve-dialog"><form method="post" data-action-from="action_url">{% csrf_token %}<input type="hidden" name="action" value="approve"><input type="hidden" name="action_url"><input type="hidden" name="next" value="{{ request.get_full_path }}">
+  <div class="modal-h"><h3>Delete <span data-text="who"></span>'s account?</h3><button type="button" class="x" data-close>&times;</button></div>
+  <div class="modal-b"><div class="note-box red" style="margin-bottom:12px">This can't be undone. Name, phone, email, ID, passport details and notifications are erased and the phone number is freed. Payments, bookings and Equb records are kept without the name.</div>
+    <div class="field"><label>Note (internal)</label><textarea name="note" rows="2" placeholder="e.g. Equb place closed, nothing owed."></textarea></div></div>
+  <div class="modal-f"><button type="button" class="btn ghost" data-close>Cancel</button><button class="btn danger">Delete account</button></div>
+</form></dialog>
+<dialog class="modal" id="restore-dialog"><form method="post" data-action-from="action_url">{% csrf_token %}<input type="hidden" name="action" value="restore"><input type="hidden" name="action_url"><input type="hidden" name="next" value="{{ request.get_full_path }}">
+  <div class="modal-h"><h3>Restore <span data-text="who"></span>'s account?</h3><button type="button" class="x" data-close>&times;</button></div>
+  <div class="modal-b"><p class="small">The request is declined and the customer can sign in again with their phone number and password.</p>
+    <div class="field"><label>Note (internal)</label><textarea name="note" rows="2" placeholder="e.g. Customer called and changed their mind."></textarea></div></div>
+  <div class="modal-f"><button type="button" class="btn ghost" data-close>Cancel</button><button class="btn">Restore account</button></div>
+</form></dialog>
+<script>
+// The dialogs post to the chosen customer's /deletion/ URL (filled in by data-fill → action_url).
+document.querySelectorAll('form[data-action-from]').forEach(function (form) {
+  form.addEventListener('submit', function () {
+    var field = form.querySelector('[name="' + form.dataset.actionFrom + '"]');
+    if (field && field.value) form.action = field.value;
+  });
+});
+</script>
+{% endblock %}

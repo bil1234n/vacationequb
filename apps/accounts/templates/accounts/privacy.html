@@ -1,0 +1,64 @@
+{% extends "accounts/_page.html" %}
+{% block title %}Privacy policy{% endblock %}
+{% block heading %}Privacy policy{% endblock %}
+{% block sub %}<p>Last updated {{ updated }}</p>{% endblock %}
+{% block content %}
+<p>This policy explains what personal data the Vacation Equb app and website collect, why, who we share it with and how you
+  can delete it. Vacation Equb (“we”) provides flight and Hajj, Umrah and tour bookings, travel Equb savings groups and
+  community crowdfunding in Ethiopia. Questions: <a href="mailto:{{ support_email }}">{{ support_email }}</a>.</p>
+
+<h2>Data we collect</h2>
+<ul>
+  <li><b>Account:</b> full name, Ethiopian mobile number, email address (optional), password (stored only as a secure hash),
+    preferred language and your referral code.</li>
+  <li><b>Travel documents and passengers:</b> names, date of birth, gender, nationality, passport number and expiry date,
+    national ID and contact phone you enter for bookings.</li>
+  <li><b>Bookings and payments:</b> trips you book, Equb places and contributions, crowdfunding gifts, refunds and payout
+    vouchers. Payments are made on telebirr or Chapa – we receive the amount, status and transaction reference, never your
+    PIN, card or bank login.</li>
+  <li><b>Referrals and giveaways:</b> who joined with your code and the free giveaway entries you earned.</li>
+  <li><b>Device:</b> a push-notification token so we can send booking, payment and Equb reminders.</li>
+</ul>
+<p>We do not collect your location, contacts, photos or files, and the app contains no advertising or advertising trackers.</p>
+
+<h2>Why we use it</h2>
+<ul>
+  <li>To create and secure your account and let you sign in.</li>
+  <li>To book flights and packages, issue e-tickets and check you in.</li>
+  <li>To run Equb groups: record contributions, run draws, pay out winners and send reminders.</li>
+  <li>To process payments and refunds, prevent fraud and keep the financial records we are required to keep.</li>
+  <li>To answer your questions and send service messages. We do not sell your data.</li>
+</ul>
+
+<h2>Who we share it with</h2>
+<ul>
+  <li><b>Airlines, hotels and ground handlers</b> – passenger details needed to issue and operate your trip.</li>
+  <li><b>Payment providers</b> (telebirr, Chapa) – the amount and reference needed to take your payment.</li>
+  <li><b>Service providers</b> that host our servers and database and deliver push notifications, only to run the service.</li>
+  <li><b>Authorities</b> when the law requires it.</li>
+</ul>
+<p>Other Equb members see you only by place number, not by name or phone.</p>
+
+<h2>How long we keep it</h2>
+<p>We keep your data while your account is open. When your account is deleted we erase your name, phone number, email,
+  ID and passport details and notifications. Payment, booking and Equb records are kept without your name for as long as
+  financial and tax law requires.</p>
+
+<h2>Security</h2>
+<p>All traffic between the app and our servers is encrypted (HTTPS). Passwords are stored as one-way hashes and sign-in
+  tokens are kept in your phone's secure storage.</p>
+
+<h2>Your choices and rights</h2>
+<ul>
+  <li>See and correct your details in the app (Profile) or by contacting us.</li>
+  <li><b>Delete your account</b> in the app (Profile → Delete account) or on <a href="/account/delete/">this web page</a>.
+    Your account is suspended at once and deleted after our team's review.</li>
+  <li>Turn off notifications at any time in your phone's settings.</li>
+</ul>
+
+<h2>Children</h2>
+<p>Vacation Equb is for people aged 18 and over. Children may travel as passengers on a booking made by an adult.</p>
+
+<h2>Changes</h2>
+<p>If we change this policy we will update the date above and, for important changes, tell you in the app.</p>
+{% endblock %}

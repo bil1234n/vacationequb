@@ -1,7 +1,7 @@
 """
 Periodic housekeeping. Run every minute from cron / systemd timer / Kubernetes CronJob:
 
-    * * * * *  cd /srv/rihla/backend && python manage.py run_scheduler
+    * * * * *  cd /srv/vacation/backend && python manage.py run_scheduler
 
 (or with ``--loop`` as a long-running worker container).
 """
@@ -14,7 +14,7 @@ from apps.core.exceptions import BusinessRuleError
 
 
 class Command(BaseCommand):
-    help = ("Expire seat holds & unpaid bookings, send departure reminders, flag late Equb contributions, send Equb "
+    help = ("Send calendar (scheduled) Equb payments, expire seat holds & unpaid bookings, send departure reminders, flag late Equb contributions, send Equb "
             "reminders and standing notices, run due draws.")
 
     def add_arguments(self, parser):
@@ -41,10 +41,31 @@ class Command(BaseCommand):
         rules = EqubSettings.load()
         out = {"bookings_expired": expire_unpaid_bookings(), "holds_released": expire_stale_holds(),
                "trip_reminders": send_trip_reminders(), "late_contributions": sweep_late_contributions()}
+        from apps.equb.scheduled import dispatch_due as send_scheduled_payments
+
+        from apps.equb.services import expire_pending_payments
+
+        from apps.equb.models import EqubGroup
+        from apps.equb.services import reopen_if_short
+
+        for g in EqubGroup.objects.filter(status=EqubGroup.Status.COMPLETED, duration_value__isnull=False):
+            reopen_if_short(g)
+        out["scheduled_payments_sent"] = send_scheduled_payments()
+        out["pending_payments_cancelled"] = expire_pending_payments(rules)
         escalation = escalate_standings(rules)
         out.update(equb_reminders=send_due_reminders(rules), standing_notices=escalation["notified"],
                    flagged_for_termination=escalation["flagged"], equb_draws=0, giveaways_drawn=0)
         now = timezone.now()
+        # Payment-only rounds (everyone has won) close on their draw day whatever the draw type.
+        from apps.equb.models import EqubMembership
+        from apps.equb.services import close_payment_round
+
+        out["payment_rounds_closed"] = 0
+        for rnd in EqubRound.objects.filter(status="COLLECTING", draw_date__lte=timezone.localdate()).select_related("group"):
+            if rnd.group.current_round == rnd.number and not rnd.group.memberships.filter(
+                    status=EqubMembership.Status.ACTIVE, has_won=False).exists():
+                close_payment_round(rnd)
+                out["payment_rounds_closed"] += 1
         if run_draws:
             for rnd in EqubRound.objects.filter(status="COLLECTING", draw_date__lte=timezone.localdate(),
                                                   group__draw_type="AUTOMATIC"):

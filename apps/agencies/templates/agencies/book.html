@@ -1,0 +1,38 @@
+{% extends "agencies/base.html" %}{% load console_tags %}
+{% block title %}Book a ticket{% endblock %}{% block heading %}Book a ticket{% endblock %}
+{% block crumbs %}{% if cust %}For {{ cust.user.full_name }}{% else %}Step 1 · choose the customer{% endif %}{% endblock %}
+{% block content %}
+<form class="toolbar" method="get">
+  <select name="customer" class="grow" onchange="this.form.submit()">
+    <option value="">— choose the customer —</option>
+    {% for c in customers %}<option value="{{ c.pk }}" {% if cust and cust.pk == c.pk %}selected{% endif %}>{{ c.user.full_name }} · {{ c.user.phone }}</option>{% endfor %}
+  </select>
+  <select name="origin"><option value="">From: any</option>{% for a in airports %}<option value="{{ a.iata }}" {% if origin == a.iata %}selected{% endif %}>{{ a.city }} ({{ a.iata }})</option>{% endfor %}</select>
+  <select name="destination"><option value="">To: any</option>{% for a in airports %}<option value="{{ a.iata }}" {% if destination == a.iata %}selected{% endif %}>{{ a.city }} ({{ a.iata }})</option>{% endfor %}</select>
+  <input type="date" name="date" value="{{ date }}">
+  <button class="btn" type="submit">Search</button>
+</form>
+{% if not customers %}<div class="msg info">Add a customer first – tickets are booked in the customer's name. <a href="{% url 'agency:customer_add' %}">New customer →</a></div>{% endif %}
+
+{% if cust and cust.family.exists %}<div class="note-box" style="margin-bottom:14px">Travelling with family? Tick who is going before you pick a fare:
+  <form method="get" id="who" style="display:inline-flex;gap:14px;flex-wrap:wrap;margin-left:8px">
+    <input type="hidden" name="customer" value="{{ cust.pk }}">
+    <label><input type="checkbox" name="who" value="self" checked> {{ cust.user.first_name }}</label>
+    {% for fm in cust.family.all %}<label><input type="checkbox" name="who" value="{{ fm.pk }}"> {{ fm.first_name }}</label>{% endfor %}
+  </form></div>{% endif %}
+
+<div class="card"><div class="card-h"><h2>Flights</h2><span>{{ flights|length }} found</span></div>
+  <div class="table-wrap"><table class="t"><thead><tr><th>Flight</th><th>Route</th><th>Departs</th><th>Fares</th></tr></thead><tbody>
+  {% for fl in flights %}<tr><td class="strong">{{ fl.flight_number }}<div class="small muted">{{ fl.airline_name }}</div></td>
+    <td>{{ fl.origin.city }} → {{ fl.destination.city }}</td><td class="small">{{ fl.departure_time|date:"D d M Y, H:i" }}</td>
+    <td>{% for fare in fl.fares.all %}{% if fare.seats_left %}<button class="btn ghost xs" type="submit" form="who" formaction="{% url 'agency:book_flight' fare.pk %}" {% if not cust %}disabled title="Choose the customer first"{% endif %} onclick="if(!document.getElementById('who')){location.href='{% url 'agency:book_flight' fare.pk %}?customer={{ cust.pk }}';return false}">{{ fare.name }} · {{ fare.base_fare|add:fare.taxes|money }}</button> {% endif %}{% empty %}<span class="muted small">No fares</span>{% endfor %}</td></tr>
+  {% empty %}<tr><td colspan="4" class="empty">No flights match. Try another date or route.</td></tr>{% endfor %}</tbody></table></div>
+</div>
+<div class="card mt"><div class="card-h"><h2>Hajj, Umrah &amp; tour packages</h2></div>
+  <div class="table-wrap"><table class="t"><thead><tr><th>Package</th><th>Departs</th><th>Places left</th><th class="r">Price</th><th></th></tr></thead><tbody>
+  {% for p in packages %}<tr><td class="strong">{{ p.name }}<div class="small muted">{{ p.destination_city }} · {{ p.duration_days }} days</div></td><td class="small">{{ p.departure_date|date:"d M Y" }}</td>
+    <td class="num">{{ p.seats_left }}</td><td class="r num">{{ p.price|money }}</td>
+    <td class="r">{% if p.seats_left %}<button class="btn sm" type="submit" form="who" formaction="{% url 'agency:book_package' p.pk %}" {% if not cust %}disabled{% endif %} onclick="if(!document.getElementById('who')){location.href='{% url 'agency:book_package' p.pk %}?customer={{ cust.pk }}';return false}">Book</button>{% else %}<span class="badge b-grey">Full</span>{% endif %}</td></tr>
+  {% empty %}<tr><td colspan="5" class="empty">No packages on sale.</td></tr>{% endfor %}</tbody></table></div>
+</div>
+{% endblock %}

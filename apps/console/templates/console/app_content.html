@@ -1,0 +1,51 @@
+{% extends "console/base.html" %}{% load console_tags %}
+{% block title %}Mobile app{% endblock %}{% block heading %}Mobile app{% endblock %}{% block crumbs %}Home banners and update popups{% endblock %}
+{% block actions %}<a class="btn ghost" href="{% url 'console:release_add' %}">+ App update</a><a class="btn" href="{% url 'console:banner_add' %}">+ Banner</a>{% endblock %}
+{% block content %}
+<style>
+  .banner-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:16px}
+  .banner-card{border:1px solid var(--line,#E1EAE5);border-radius:16px;overflow:hidden;background:#fff;display:flex;flex-direction:column;text-decoration:none;color:inherit}
+  .banner-card:hover{border-color:#0F382B}
+  .banner-img{aspect-ratio:12/5.2;background:#E7F0EC center/cover no-repeat;position:relative}
+  .banner-img .over{position:absolute;inset:auto 0 0 0;padding:12px 14px;background:linear-gradient(transparent,rgba(0,0,0,.6));color:#fff}
+  .banner-img .over b{display:block;font-size:15px}.banner-img .over span{font-size:12px;opacity:.9}
+  .banner-meta{padding:10px 14px;display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:12.5px}
+</style>
+
+<section class="card">
+  <div class="card-h"><h2>Home banners</h2><span class="muted small">The carousel at the top of the app's Home page · lowest order first</span></div>
+  {% if banners %}
+  <div class="banner-grid" style="padding:4px">
+    {% for b in banners %}
+    <a class="banner-card" href="{% url 'console:banner_edit' b.pk %}">
+      <div class="banner-img" style="background-image:url('{{ b.image.url }}')">
+        {% if b.title or b.subtitle %}<div class="over"><b>{{ b.title }}</b><span>{{ b.subtitle }}</span></div>{% endif %}
+      </div>
+      <div class="banner-meta">
+        <span>#{{ b.sort_order }} · {{ b.get_link_type_display }}</span>
+        {% if not b.is_active %}<span class="badge b-grey">Hidden</span>
+        {% elif b.ends_at and b.ends_at < now %}<span class="badge b-grey">Ended</span>
+        {% elif b.starts_at and b.starts_at > now %}<span class="badge b-gold">From {{ b.starts_at|date:"d M" }}</span>
+        {% else %}<span class="badge b-green">Live</span>{% endif %}
+      </div>
+    </a>
+    {% endfor %}
+  </div>
+  {% else %}<div class="empty">No banners yet. <a href="{% url 'console:banner_add' %}">Add the first slide →</a></div>{% endif %}
+</section>
+
+<section class="card mt">
+  <div class="card-h"><h2>App updates</h2><span class="muted small">The newest active entry per platform decides the popup</span></div>
+  <div class="table-wrap"><table class="t">
+    <thead><tr><th>Platform</th><th>Version</th><th>Type</th><th>Oldest allowed</th><th>Popup</th><th>Added</th><th></th></tr></thead>
+    <tbody>{% for r in releases %}<tr class="{% if not r.is_active %}muted{% endif %}">
+      <td>{{ r.get_platform_display }}</td><td class="strong mono">{{ r.version }}</td>
+      <td>{% if r.kind == 'FORCE' %}<span class="badge b-red">Force update</span>{% else %}<span class="badge b-green">Normal</span>{% endif %}</td>
+      <td class="mono small">{{ r.min_supported_version|default:"—" }}</td>
+      <td class="small">{{ r.title }}{% if not r.is_active %} <span class="badge b-grey">Off</span>{% endif %}</td>
+      <td class="small">{{ r.created_at|date:"d M Y" }}</td>
+      <td class="r"><a class="btn ghost sm" href="{% url 'console:release_edit' r.pk %}">Edit</a></td></tr>
+    {% empty %}<tr><td colspan="7" class="empty">No updates published. When you release a new version in the store, add it here so older phones are told to update.</td></tr>{% endfor %}</tbody>
+  </table></div>
+</section>
+{% endblock %}

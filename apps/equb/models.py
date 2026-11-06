@@ -56,10 +56,14 @@ class EqubSettings(models.Model):
     grace_days = models.PositiveSmallIntegerField(default=3, help_text="Days after the due date before a payment is late.")
     require_paid_to_draw = models.BooleanField(default=True, help_text="Only members paid up for the round enter its draw.")
     payout_basis = models.CharField(max_length=10, default="FULL_POT",
-                                    choices=[("FULL_POT", "Full pot – Rihla guarantees the payout"),
+                                    choices=[("FULL_POT", "Full pot – Vacation Equb guarantees the payout"),
                                              ("COLLECTED", "Only what was collected by draw day")],
                                     help_text="What each winner receives.")
     auto_start_when_full = models.BooleanField(default=True, help_text="Start an Equb as soon as all its places are taken.")
+    pending_payment_minutes = models.PositiveSmallIntegerField(
+        default=3, validators=[MinValueValidator(1), MaxValueValidator(1440)],
+        help_text="An app payment that is still unpaid after this many minutes is cancelled automatically "
+                  "(Chapa is checked first, so nothing that was paid is lost). Members can also cancel it themselves.")
     updated_at = models.DateTimeField(auto_now=True)
     updated_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
                                    related_name="+")
@@ -199,7 +203,7 @@ class EqubGroup(TimeStampedModel):
         CANCELLED = "CANCELLED", "Cancelled"
 
     class PayoutBasis(models.TextChoices):
-        FULL_POT = "FULL_POT", "Full pot – Rihla guarantees the payout"
+        FULL_POT = "FULL_POT", "Full pot – Vacation Equb guarantees the payout"
         COLLECTED = "COLLECTED", "Only what was collected by draw day"
 
     equb_package = models.ForeignKey(EqubPackage, null=True, blank=True, on_delete=models.PROTECT,
@@ -221,6 +225,10 @@ class EqubGroup(TimeStampedModel):
         "Rounds drawn", null=True, blank=True, validators=[MinValueValidator(1), MaxValueValidator(10000)],
         help_text="How many draws the Equb has. Members ÷ rounds = winners in each draw. Empty = one draw per member.")
 
+    service_fee_override = models.DecimalField(
+        "Service fee (%)", max_digits=4, decimal_places=2, null=True, blank=True,
+        validators=[MinValueValidator(Decimal("0")), MaxValueValidator(Decimal("20"))],
+        help_text="Kept from each winner's payout. Leave empty to use the Equb rules default.")
     start_date = models.DateField()
     end_date = models.DateField(null=True, blank=True)
     status = models.CharField(max_length=10, choices=Status.choices, default=Status.OPEN, db_index=True)
@@ -252,6 +260,9 @@ class EqubGroup(TimeStampedModel):
 
     @property
     def service_fee_percent(self) -> Decimal:
+        """This Equb's own service fee when staff set one, otherwise the Equb rules default."""
+        if self.service_fee_override is not None:
+            return self.service_fee_override
         return self.rules.service_fee_percent
 
     @property
@@ -285,9 +296,14 @@ class EqubGroup(TimeStampedModel):
         return -(-self.max_members // self.rounds_drawn)
 
     @property
+    def payment_rounds(self) -> int:
+        """How many times each member pays (winners too): the Duration Value – 70,000 × 3 = 210,000 per person."""
+        return self.duration_value or 0
+
+    @property
     def price_per_person(self) -> Decimal:
         """What each member pays in total: contribution amount × duration value (70,000 × 3 = 210,000)."""
-        return (self.contribution_amount or 0) * (self.duration_value or 0)
+        return (self.contribution_amount or 0) * self.payment_rounds
     min_members_to_start = 0     # staff can start an Equb at any time, even before anyone has joined
     is_public = True             # every Equb is listed in the app; Group Equbs are joined with their code
 
@@ -339,8 +355,10 @@ class EqubGroup(TimeStampedModel):
             scheduled = self.rounds.count()
             if scheduled:
                 return scheduled
-        # Each member wins exactly once; several winners per round shortens the cycle.
-        return -(-self.planned_members // self.winners_per_round)
+        # Each member wins exactly once (several winners per round shortens the draws), and everyone –
+        # winners included – pays every round up to the duration (price per person = contribution × duration).
+        draws = self.rounds_drawn or -(-self.planned_members // self.winners_per_round)
+        return max(draws, self.payment_rounds)
 
     @property
     def planned_members(self) -> int:
@@ -483,7 +501,7 @@ class GroupEqub(TimeStampedModel):
 
 class GroupEqubInvite(TimeStampedModel):
     """
-    The owner asks a Rihla customer (found by phone number) to join the group. Nothing happens until the
+    The owner asks a vacation customer (found by phone number) to join the group. Nothing happens until the
     person accepts; then they get their own place in the Equb and pay their own contributions.
     """
 
@@ -750,3 +768,73 @@ class Termination(TimeStampedModel):
     @property
     def is_active(self) -> bool:
         return self.reinstated_at is None
+
+
+class ScheduledPayment(TimeStampedModel):
+    """
+    "Calendar pay": a member picks the day and time they want to pay. At that moment we create the
+    Chapa checkout for the rounds they chose and send it to their phone; they confirm it in Chapa
+    (telebirr / CBE Birr / bank OTP). With ``repeat`` it is set up again for the next due date.
+    """
+
+    class Status(models.TextChoices):
+        SCHEDULED = "SCHEDULED", "Scheduled"
+        SENT = "SENT", "Bill sent – waiting for payment"
+        PAID = "PAID", "Paid"
+        SKIPPED = "SKIPPED", "Nothing was due"
+        FAILED = "FAILED", "Could not be sent"
+        CANCELLED = "CANCELLED", "Cancelled"
+
+    class Repeat(models.TextChoices):
+        ONCE = "ONCE", "Only once"
+        EVERY_DUE = "EVERY_DUE", "Every due date"
+
+    OPEN_STATUSES = (Status.SCHEDULED, Status.SENT)
+
+    membership = models.ForeignKey(EqubMembership, on_delete=models.CASCADE, related_name="scheduled_payments")
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="scheduled_equb_payments")
+    scheduled_for = models.DateTimeField(db_index=True)
+    rounds = models.PositiveSmallIntegerField(default=1, validators=[MinValueValidator(1), MaxValueValidator(60)])
+    repeat = models.CharField(max_length=10, choices=Repeat.choices, default=Repeat.ONCE)
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.SCHEDULED, db_index=True)
+    amount = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True,
+                                 help_text="Filled in when the bill is sent.")
+    transaction = models.ForeignKey("payments.PaymentTransaction", null=True, blank=True, on_delete=models.SET_NULL,
+                                    related_name="+")
+    sent_at = models.DateTimeField(null=True, blank=True)
+    note = models.CharField(max_length=255, blank=True)
+
+    class Meta:
+        ordering = ["scheduled_for"]
+
+    def __str__(self):
+        return f"{self.membership} · {self.scheduled_for:%d %b %Y %H:%M}"
+
+
+class JoinRequest(TimeStampedModel):
+    """A member who was removed from (or left) a started Equb asks to come back; staff approve or decline."""
+
+    class Status(models.TextChoices):
+        PENDING = "PENDING", "Waiting for approval"
+        APPROVED = "APPROVED", "Approved"
+        REJECTED = "REJECTED", "Declined"
+        CANCELLED = "CANCELLED", "Withdrawn"
+
+    group = models.ForeignKey(EqubGroup, on_delete=models.CASCADE, related_name="join_requests")
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="equb_join_requests")
+    membership = models.ForeignKey(EqubMembership, null=True, blank=True, on_delete=models.SET_NULL, related_name="+",
+                                   help_text="The earlier place this person had in the Equb.")
+    message = models.CharField(max_length=500, blank=True)
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.PENDING, db_index=True)
+    decided_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
+                                   related_name="+")
+    decided_at = models.DateTimeField(null=True, blank=True)
+    staff_note = models.CharField(max_length=255, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        constraints = [models.UniqueConstraint(fields=["group", "user"], condition=models.Q(status="PENDING"),
+                                               name="uniq_pending_join_request")]
+
+    def __str__(self):
+        return f"{self.user} → {self.group} ({self.status})"

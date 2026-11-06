@@ -65,7 +65,8 @@ class WebhookView(APIView):
         if not txn:
             event.processing_error = "unknown transaction"
             event.save()
-            return Response({"detail": "unknown transaction"}, status=404)
+            # Chapa retries anything that is not 200 for 72 h (payouts, payment links…): acknowledge and move on.
+            return Response({"detail": "ignored"}, status=200 if provider == "chapa" else 404)
         event.transaction = txn
         event.save()
         # Never trust the callback alone for success: confirm with the provider API.
@@ -75,6 +76,28 @@ class WebhookView(APIView):
             apply_status(txn.pk, result.status, provider_reference=result.provider_reference,
                          amount=result.amount, payload=result.raw)
         return Response({"code": 0, "msg": "success"})
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class ChapaCallbackView(APIView):
+    """
+    Chapa's ``callback_url``: an unsigned ``GET ?trx_ref=…&ref_id=…&status=…`` after each checkout.
+    It is only a hint – the status is always confirmed with Chapa's verify API.
+    """
+
+    authentication_classes = []
+    permission_classes = [permissions.AllowAny]
+    throttle_classes = []
+
+    def get(self, request):
+        ref = request.query_params.get("trx_ref") or request.query_params.get("tx_ref") or ""
+        txn = _find_txn(ref)
+        if txn and txn.provider == "chapa":
+            txn = refresh_from_provider(txn)
+            return Response({"reference": str(txn.reference), "status": txn.status})
+        return Response({"detail": "ignored"})
+
+    post = get  # some Chapa flows POST the same fields
 
 
 def _find_txn(ref: str):
@@ -93,7 +116,7 @@ class PaymentReturnView(APIView):
     def get(self, request, reference):
         txn = get_object_or_404(PaymentTransaction, reference=reference)
         txn = refresh_from_provider(txn)
-        deep_link = f"{settings.RIHLA['APP_DEEP_LINK']}?reference={txn.reference}&status={txn.status}"
+        deep_link = f"{settings.VACATION['APP_DEEP_LINK']}?reference={txn.reference}&status={txn.status}"
         return HttpResponseRedirect(deep_link) if request.query_params.get("redirect") else Response(
             {"reference": str(txn.reference), "status": txn.status, "deep_link": deep_link})
 
@@ -106,14 +129,14 @@ class MockCheckoutView(APIView):
     permission_classes = [permissions.AllowAny]
 
     def _txn(self, reference):
-        if not settings.RIHLA["ENABLE_MOCK_GATEWAY"]:
+        if not settings.VACATION["ENABLE_MOCK_GATEWAY"]:
             raise Http404
         return get_object_or_404(PaymentTransaction, reference=reference, provider="mock")
 
     def get(self, request, reference):
         txn = self._txn(reference)
         html = f"""<!doctype html><html><head><meta name=viewport content="width=device-width,initial-scale=1">
-<title>Rihla Sandbox Pay</title><style>body{{font-family:system-ui;background:#fff;color:#0F382B;padding:24px}}
+<title>Vacation Equb Sandbox Pay</title><style>body{{font-family:system-ui;background:#fff;color:#0F382B;padding:24px}}
 .card{{border:1px solid #d9e5df;border-radius:16px;padding:24px;max-width:420px;margin:auto}}
 button{{width:100%;padding:14px;border:0;border-radius:12px;font-size:16px;margin-top:12px;cursor:pointer}}
 .pay{{background:#0F382B;color:#fff}}.fail{{background:#f3f5f4;color:#0F382B}}</style></head>
@@ -133,4 +156,4 @@ button{{width:100%;padding:14px;border:0;border-radius:12px;font-size:16px;margi
         txn = apply_status(txn.pk, result, payload=payload)
         if request.content_type and "json" in request.content_type:
             return Response(PaymentTransactionSerializer(txn).data)
-        return HttpResponseRedirect(f"{settings.RIHLA['APP_DEEP_LINK']}?reference={txn.reference}&status={txn.status}")
+        return HttpResponseRedirect(f"{settings.VACATION['APP_DEEP_LINK']}?reference={txn.reference}&status={txn.status}")

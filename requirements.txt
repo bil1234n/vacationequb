@@ -5,11 +5,11 @@ django-cors-headers>=4.4,<5
 django-filter>=24.2
 drf-spectacular>=0.27
 dj-database-url>=2.2
-psycopg2-binary>=2.9.9
 requests>=2.32
 cryptography>=42.0
 qrcode[pil]>=7.4
 Pillow>=10.3
 reportlab>=4.2
-gunicorn>=22.0
-whitenoise>=6.7
+psycopg2-binary
+whitenoise
+gunicorn

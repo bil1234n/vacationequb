@@ -1,5 +1,6 @@
 from django.urls import path
 
+from . import agency_views as ag
 from . import community_views as cv
 from . import equb_views as e
 from . import manage_views as m
@@ -63,10 +64,23 @@ urlpatterns = [
     path("lucky-draws/", cv.old_lucky_redirect),
     path("lucky-draws/<slug:slug>/", cv.old_lucky_redirect),
     path("payments/", views.payments, name="payments"),
+    path("agencies/", ag.agencies, name="agencies"),
+    path("agencies/new/", ag.agency_form, name="agency_add"),
+    path("agencies/<int:pk>/", ag.agency_detail, name="agency"),
+    path("agencies/<int:pk>/edit/", ag.agency_form, name="agency_edit"),
     path("customers/", views.users, name="users"),
+    path("customers/deletion-requests/", views.deletion_requests, name="deletion_requests"),
+    path("customers/<int:pk>/deletion/", views.deletion_decide, name="deletion_decide"),
     path("customers/<int:pk>/", views.user_detail, name="user"),
     path("customers/<int:pk>/edit/", views.user_edit, name="user_edit"),
     path("settings/", m.settings_page, name="settings"),
+    path("app/", m.app_content, name="app_content"),
+    path("app/banners/new/", m.banner_form, name="banner_add"),
+    path("app/banners/<int:pk>/", m.banner_form, name="banner_edit"),
+    path("app/banners/<int:pk>/delete/", m.banner_delete, name="banner_delete"),
+    path("app/updates/new/", m.release_form, name="release_add"),
+    path("app/updates/<int:pk>/", m.release_form, name="release_edit"),
+    path("app/updates/<int:pk>/delete/", m.release_delete, name="release_delete"),
     path("settings/equb-rules/", e.equb_rules, name="equb_rules"),
     path("settings/airports/new/", m.airport_form, name="airport_add"),
     path("settings/airports/<int:pk>/", m.airport_form, name="airport_edit"),

@@ -1,0 +1,30 @@
+{% extends "agencies/base.html" %}{% load console_tags %}
+{% block title %}Travellers{% endblock %}
+{% block heading %}{% if fare %}{{ fare.flight.flight_number }} · {{ fare.flight.origin.city }} → {{ fare.flight.destination.city }}{% else %}{{ package.name }}{% endif %}{% endblock %}
+{% block crumbs %}<a href="{% url 'agency:book' %}?customer={{ c.pk }}">Book a ticket</a> / Step 2 · travellers for {{ c.user.full_name }}{% endblock %}
+{% block content %}
+<form method="post" class="form-page" novalidate>{% csrf_token %}
+  <input type="hidden" name="customer" value="{{ c.pk }}">
+  {{ formset.management_form }}
+  {% if formset.non_form_errors %}<div class="msg error">{{ formset.non_form_errors|join:" " }}</div>{% endif %}
+  <section class="card form-section"><dl class="kv">
+    {% if fare %}<dt>Departs</dt><dd>{{ fare.flight.departure_time|date:"D d M Y, H:i" }}</dd><dt>Fare</dt><dd>{{ fare.name }} · {{ fare.checked_baggage_kg }} kg bag{% if fare.refundable %} · refundable{% endif %}</dd><dt>Seats left</dt><dd>{{ fare.seats_left }}</dd>
+    {% else %}<dt>Departs</dt><dd>{{ package.departure_date|date:"d M Y" }} · {{ package.duration_days }} days</dd><dt>Price</dt><dd>{{ package.price|money }} per traveller</dd><dt>Places left</dt><dd>{{ package.seats_left }}</dd>{% endif %}
+    <dt>Paid by</dt><dd>{{ c.user.full_name }} · {{ c.user.phone }}</dd></dl>
+    <p class="small muted" style="margin-bottom:0">Seats are assigned at check-in. The total is shown after you create the booking; seats are held while the customer pays.</p>
+  </section>
+  {% for tf in formset %}
+  <section class="card form-section">
+    <div class="form-section-h"><h2>Traveller {{ forloop.counter }}</h2><p class="muted">Exactly as on the passport.</p></div>
+    {% if tf.non_field_errors %}<div class="msg error">{{ tf.non_field_errors|join:" " }}</div>{% endif %}
+    <div class="form-grid">{% for bf in tf %}{% include "console/_field.html" with bf=bf %}{% endfor %}</div>
+  </section>
+  {% endfor %}
+  <div class="form-actions">
+    <a class="btn ghost" href="{% url 'agency:book' %}?customer={{ c.pk }}">← Back</a>
+    {% if family %}<span class="small muted">Change who travels on the previous page.</span>{% endif %}
+    <span class="grow"></span>
+    <button class="btn" type="submit">Create booking</button>
+  </div>
+</form>
+{% endblock %}

@@ -1,0 +1,33 @@
+{% extends "accounts/_page.html" %}
+{% block title %}Delete your account{% endblock %}
+{% block heading %}Delete your Vacation Equb account{% endblock %}
+{% block sub %}<p>You can also do this in the app: Profile → Delete account.</p>{% endblock %}
+{% block content %}
+{% if done %}
+<div class="ok">
+  <h2 style="margin-top:0">Request received</h2>
+  <p>Your account is now suspended – you can't sign in and you won't get messages from us. Our team will review the request
+    and delete your personal data. If you are in an Equb or have an upcoming trip, we will contact you first to settle it.</p>
+  <p class="muted">Changed your mind? Email <a href="mailto:{{ support_email }}">{{ support_email }}</a> from your registered details before we finish the review.</p>
+</div>
+{% else %}
+<h2>What happens</h2>
+<ul>
+  <li>Your account is <b>suspended right away</b>: you can no longer sign in.</li>
+  <li>Our team reviews the request. If you have a running Equb place or an upcoming trip, we contact you to settle it first.</li>
+  <li>Once approved, we <b>delete</b> your name, phone number, email, ID and passport details and your notifications.</li>
+  <li>Payment, booking and Equb contribution records are <b>kept without your name</b>, because we must keep financial records.</li>
+</ul>
+<div class="card" style="margin-top:20px">
+  <form method="post" novalidate>{% csrf_token %}
+    {% if form.non_field_errors %}<div class="errors">{{ form.non_field_errors|join:" " }}</div>{% endif %}
+    <label for="id_phone">{{ form.phone.label }}</label>{{ form.phone }}{% if form.phone.errors %}<div class="errors">{{ form.phone.errors|join:" " }}</div>{% endif %}
+    <label for="id_password">{{ form.password.label }}</label>{{ form.password }}{% if form.password.errors %}<div class="errors">{{ form.password.errors|join:" " }}</div>{% endif %}
+    <label for="id_reason">{{ form.reason.label }}</label>{{ form.reason }}{% if form.reason.errors %}<div class="errors">{{ form.reason.errors|join:" " }}</div>{% endif %}
+    <label class="check">{{ form.confirm }} <span>{{ form.confirm.label }}</span></label>{% if form.confirm.errors %}<div class="errors">Please tick the box to confirm.</div>{% endif %}
+    <button type="submit">Request account deletion</button>
+  </form>
+</div>
+<p class="muted" style="margin-top:16px">Forgot your password? Email <a href="mailto:{{ support_email }}">{{ support_email }}</a> from the phone number or email on your account and we will handle the deletion for you.</p>
+{% endif %}
+{% endblock %}

@@ -261,13 +261,14 @@
       sync();
     });
 
-    // Create Equb group: Price per person = Contribution Amount × Duration Value (live).
+    // Create Equb group: Price per person = Contribution Amount × Duration Value (live) – every member pays it, winners too.
     document.querySelectorAll('input[data-price]').forEach((out) => {
       const form = out.closest('form');
       const amount = form.elements.contribution_amount, value = form.elements.duration_value;
       const calc = () => {
         const a = parseFloat(amount.value), v = parseInt(value.value, 10);
-        out.value = a > 0 && v > 0 ? `${(a * v).toLocaleString('en-US', { maximumFractionDigits: 2 })} ETB` : '';
+        out.value = a > 0 && v > 0
+          ? `${(a * v).toLocaleString('en-US', { maximumFractionDigits: 2 })} ETB · ${v} payment${v > 1 ? 's' : ''}` : '';
       };
       [amount, value].forEach((el) => el && el.addEventListener('input', calc));
       calc();

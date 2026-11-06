@@ -13,7 +13,7 @@ GATEWAY_CLASSES: dict[str, type[PaymentGateway]] = {
 
 
 def get_gateway(name: str) -> PaymentGateway:
-    if name == "mock" and not settings.RIHLA["ENABLE_MOCK_GATEWAY"]:
+    if name == "mock" and not settings.VACATION["ENABLE_MOCK_GATEWAY"]:
         raise GatewayError("The sandbox gateway is disabled in this environment")
     try:
         cls = GATEWAY_CLASSES[name]

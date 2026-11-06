@@ -1,0 +1,62 @@
+{% load static console_tags %}<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Agency{% endblock %} · {{ agency.name }} · Vacation Equb</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{% static 'console/console.css' %}">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%230F382B'/><path d='M16 6l2 9 8 4v2l-8-2-1 5 3 2v1l-4-1-4 1v-1l3-2-1-5-8 2v-2l8-4z' fill='white'/></svg>">
+</head>
+<body>
+<div class="shell">
+  <aside class="sidebar">
+    <div class="brand"><div class="brand-mark">{{ agency.name|initials }}</div><div><b>{{ agency.name }}</b><small>Agency portal</small></div></div>
+    <nav class="nav">
+      <div class="nav-label">Overview</div>
+      <a href="{% url 'agency:dashboard' %}" class="{% if nav == 'dashboard' %}active{% endif %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>Dashboard</a>
+      <div class="nav-label">People</div>
+      <a href="{% url 'agency:customers' %}" class="{% if nav == 'customers' %}active{% endif %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="8" r="4"/><path d="M2 21a7 7 0 0 1 14 0"/><path d="M16 4a4 4 0 0 1 0 8m6 9a7 7 0 0 0-4-6.3"/></svg>Customers &amp; families</a>
+      <a href="{% url 'agency:equbs' %}" class="{% if nav == 'equb' %}active{% endif %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="7" r="3"/><circle cx="5" cy="10" r="2.5"/><circle cx="19" cy="10" r="2.5"/><path d="M6.5 21a5.5 5.5 0 0 1 11 0"/></svg>Equb members</a>
+      <div class="nav-label">Travel</div>
+      <a href="{% url 'agency:book' %}" class="{% if nav == 'book' %}active{% endif %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.8 19.2L16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/></svg>Book a ticket</a>
+      <a href="{% url 'agency:bookings' %}" class="{% if nav == 'bookings' %}active{% endif %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9a2 2 0 0 0 0 6v3h18v-3a2 2 0 0 1 0-6V6H3z"/><path d="M13 6v3m0 3v.01M13 15v3"/></svg>Bookings</a>
+      <div class="nav-label">Business</div>
+      <a href="{% url 'agency:earnings' %}" class="{% if nav == 'earnings' %}active{% endif %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>Earnings</a>
+      <a href="{% url 'agency:team' %}" class="{% if nav == 'team' %}active{% endif %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>Team</a>
+    </nav>
+    <div class="sidebar-foot">Powered by Vacation Equb · {{ agency.commission_percent|floatformat:"-2" }}% platform fee</div>
+  </aside>
+  <main class="main">
+    <div class="topbar">
+      <div>
+        <div class="crumbs">{% block crumbs %}{{ agency.name }}{% endblock %}</div>
+        <h1>{% block heading %}{% endblock %}</h1>
+      </div>
+      <div style="display:flex;gap:12px;align-items:center">
+        {% block actions %}{% endblock %}
+        <div class="user-menu">
+          <button class="user-btn" type="button" aria-haspopup="true">
+            <span class="avatar">{{ request.user.full_name|initials }}</span>
+            <span class="strong">{{ request.user.first_name }}</span>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+          </button>
+          <div class="dropdown">
+            <div class="small muted" style="padding:8px 12px">{{ request.user.full_name }}<br>{{ me.get_role_display }}</div>
+            <a href="{% url 'agency:profile' %}">Agency profile</a>
+            <form method="post" action="{% url 'agency:logout' %}">{% csrf_token %}<button class="danger" type="submit">Log out</button></form>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="content">
+      {% if agency.status == 'PENDING' %}<div class="msg warning">Your agency is waiting for approval by Vacation Equb. You can look around; adding customers and booking open once it is approved.</div>{% endif %}
+      {% for m in messages %}<div class="msg {{ m.tags }}">{{ m }}</div>{% endfor %}
+      {% block content %}{% endblock %}
+    </div>
+  </main>
+</div>
+<script src="{% static 'console/console.js' %}"></script>
+</body>
+</html>

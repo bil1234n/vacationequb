@@ -190,16 +190,17 @@ class EqubForm(StyledMixin, forms.ModelForm):
 
     price_per_person = forms.CharField(
         label="Price per person", required=False, disabled=True,
-        help_text="Contribution Amount × Duration Value – what each member pays in total.")
+        help_text="Contribution Amount × Duration Value – what each member (winners too) pays in total.")
     sections = [("", "", ["equb_package", "name", "contribution_amount", "frequency_days", "duration_value",
-                          "duration_unit", "price_per_person", "max_members", "rounds_drawn", "start_date", "end_date",
-                          "status", "draw_type", "rules_text"])]
+                          "duration_unit", "price_per_person", "max_members", "rounds_drawn", "service_fee_override",
+                          "start_date", "end_date", "status", "draw_type", "rules_text"])]
     create_another = True
 
     class Meta:
         model = EqubGroup
         fields = ["equb_package", "name", "contribution_amount", "frequency_days", "max_members", "rounds_drawn",
-                  "duration_value", "duration_unit", "start_date", "end_date", "rules_text", "status", "draw_type"]
+                  "service_fee_override", "duration_value", "duration_unit", "start_date", "end_date", "rules_text",
+                  "status", "draw_type"]
         labels = {"equb_package": "Equb Package", "name": "Name", "contribution_amount": "Contribution Amount",
                   "rounds_drawn": "Rounds Drawn",
                   "frequency_days": "Contribution Frequency (Days)", "max_members": "Members",
@@ -225,6 +226,10 @@ class EqubForm(StyledMixin, forms.ModelForm):
         for name in ("contribution_amount", "frequency_days", "duration_value"):
             f[name].required = True
         f["frequency_days"].widget.attrs.update(min=1, max=365, step=1)
+        default_fee = EqubSettings.load().service_fee_percent
+        f["service_fee_override"].widget.attrs.update(min=0, max=20, step="0.01", placeholder=f"Default {default_fee:g}%")
+        f["service_fee_override"].help_text = (f"Kept from each winner's payout. Leave empty to use the default "
+                                               f"{default_fee:g}% from Equb rules.")
         f["max_members"].widget.attrs.update(min=2, max=10000, step=1)
         f["rounds_drawn"].widget.attrs.update(min=1, max=10000, step=1, placeholder="Same as members")
         f["contribution_amount"].widget.attrs.update(placeholder="e.g. 70000")
@@ -232,14 +237,21 @@ class EqubForm(StyledMixin, forms.ModelForm):
         inst = self.instance
         amount = self.initial.get("contribution_amount") or (inst.contribution_amount if inst.pk else None)
         value = self.initial.get("duration_value") or (inst.duration_value if inst.pk else None)
-        if amount and value:
+        if inst.pk and inst.payment_rounds:
+            n = inst.payment_rounds
+            f["price_per_person"].initial = (f"{inst.price_per_person:,.2f} ETB".replace(".00 ETB", " ETB")
+                                             + f" · {n} payment{'s' if n > 1 else ''}")
+        elif amount and value:
             f["price_per_person"].initial = f"{Decimal(amount) * int(value):,.2f} ETB".replace(".00 ETB", " ETB")
         f["duration_value"].widget.attrs.update(min=1, step=1)
         f["contribution_amount"].widget.attrs.update(min=1)
         f["draw_type"].choices = [("MANUAL", "Manual"), ("AUTOMATIC", "Automatic")]
+        # Two simple states for members: not started (anyone can join, nobody pays yet) and started (join and pay).
         running = bool(self.instance.pk and self.instance.status not in ("DRAFT", "OPEN"))
-        f["status"].choices = EqubGroup.Status.choices if running else \
-            [c for c in EqubGroup.Status.choices if c[0] in ("DRAFT", "OPEN")]
+        f["status"].choices = ([("ACTIVE", "Started – members join and pay"), ("COMPLETED", "Completed"),
+                                ("CANCELLED", "Cancelled")] if running else
+                               [("OPEN", "Not started – members can join, payments wait for the start"),
+                                ("ACTIVE", "Started – members join and pay"), ("DRAFT", "Draft – hidden from the app")])
         f["rules_text"].widget.attrs.update(rows=4)
 
     def clean(self):
@@ -247,6 +259,10 @@ class EqubForm(StyledMixin, forms.ModelForm):
         mx, rd = d.get("max_members"), d.get("rounds_drawn")
         if mx and rd and rd > mx:
             self.add_error("rounds_drawn", "There can't be more draws than members.")
+        payments = d.get("duration_value") or 0  # each member pays Duration Value times (price per person)
+        if rd and payments and rd > payments:
+            self.add_error("rounds_drawn", f"Members pay {payments} time{'s' if payments > 1 else ''} in this duration, "
+                                           f"so there can be at most {payments} draw{'s' if payments > 1 else ''}.")
         if self.instance.pk and mx and mx < self.instance.members_count:
             self.add_error("max_members", f"{self.instance.members_count} members have already joined.")
         start, value, unit = d.get("start_date"), d.get("duration_value"), d.get("duration_unit")
@@ -469,7 +485,7 @@ class EqubRulesForm(StyledMixin, forms.ModelForm):
                                                  "require_paid_to_draw", "auto_start_when_full"]),
         ("When is a member behind?", "Counted in unpaid rounds (a round is unpaid once its due date and the pool's grace days have passed).",
          ["warn_at", "block_at", "suspend_at", "auto_flag_for_termination"]),
-        ("Draws & payments", "", ["min_paid_rounds_to_win", "max_advance_rounds"]),
+        ("Draws & payments", "", ["min_paid_rounds_to_win", "max_advance_rounds", "pending_payment_minutes"]),
         ("Reminders & notices", "Sent as in-app notifications and push messages.", ["reminder_days_before", "send_overdue_notices"]),
         ("Call centre & terminations", "Days are counted from the due date of the oldest unpaid round.",
          ["call_after_days", "terminate_after_days"]),
@@ -479,8 +495,8 @@ class EqubRulesForm(StyledMixin, forms.ModelForm):
         model = EqubSettings
         fields = ["service_fee_percent", "late_fee", "grace_days", "payout_basis", "require_paid_to_draw",
                   "auto_start_when_full", "warn_at", "block_at", "suspend_at", "auto_flag_for_termination",
-                  "min_paid_rounds_to_win", "max_advance_rounds", "reminder_days_before", "send_overdue_notices",
-                  "call_after_days", "terminate_after_days"]
+                  "min_paid_rounds_to_win", "max_advance_rounds", "pending_payment_minutes", "reminder_days_before",
+                  "send_overdue_notices", "call_after_days", "terminate_after_days"]
         labels = {"service_fee_percent": "Service fee (%)", "late_fee": "Late fee (ETB)", "grace_days": "Grace days",
                   "payout_basis": "Winner receives", "require_paid_to_draw": "Only paid-up members enter the draw",
                   "auto_start_when_full": "Start an Equb automatically when it is full",
@@ -488,6 +504,7 @@ class EqubRulesForm(StyledMixin, forms.ModelForm):
                   "suspend_at": "Suspend after (unpaid rounds)",
                   "auto_flag_for_termination": "Put suspended members on the termination list automatically",
                   "min_paid_rounds_to_win": "Paid rounds needed to win", "max_advance_rounds": "Rounds a member may pay ahead",
+                  "pending_payment_minutes": "Cancel unpaid app payments after (minutes)",
                   "reminder_days_before": "Remind this many days before the due date",
                   "send_overdue_notices": "Notify members when they fall behind",
                   "call_after_days": "Show in the call centre after (days overdue)",
@@ -509,7 +526,7 @@ class CrowdfundingForm(StyledMixin, forms.ModelForm):
 
     sections = [
         ("Campaign", "", ["title", "category", "story", "image_url", "is_featured"]),
-        ("Who is helped", "Donors see the beneficiary's name. Link their Rihla account to notify them of each gift.",
+        ("Who is helped", "Donors see the beneficiary's name. Link their Vacation Equb account to notify them of each gift.",
          ["beneficiary_name", "beneficiary", "goal_amount"]),
         ("Giving", "Every gift goes 100% to the campaign. The platform fee is a separate amount the donor pays on top "
                    "(100 ETB gift + 5% = 105 ETB at checkout).", ["platform_fee_percent", "min_donation"]),
@@ -522,7 +539,7 @@ class CrowdfundingForm(StyledMixin, forms.ModelForm):
                   "goal_amount", "platform_fee_percent", "min_donation", "starts_at", "ends_at", "status"]
         labels = {"goal_amount": "Goal (ETB)", "platform_fee_percent": "Platform fee added on top (%)",
                   "min_donation": "Smallest gift (ETB)", "is_featured": "Feature on the app home screen",
-                  "image_url": "Image URL", "beneficiary": "Beneficiary's Rihla account", "story": "Story"}
+                  "image_url": "Image URL", "beneficiary": "Beneficiary's vacation account", "story": "Story"}
         widgets = {"starts_at": forms.DateTimeInput(attrs={"type": "datetime-local"}, format="%Y-%m-%dT%H:%M"),
                    "ends_at": forms.DateTimeInput(attrs={"type": "datetime-local"}, format="%Y-%m-%dT%H:%M")}
 
@@ -539,7 +556,7 @@ class CrowdfundingForm(StyledMixin, forms.ModelForm):
                                (self.instance.pk and self.instance.status == "FUNDED")]
         if not self.instance.pk:
             self.initial.update(starts_at=timezone.localtime().replace(second=0, microsecond=0), status="LIVE",
-                                platform_fee_percent=Decimal(str(settings.RIHLA["CROWDFUND_FEE_PERCENT"])), min_donation=10)
+                                platform_fee_percent=Decimal(str(settings.VACATION["CROWDFUND_FEE_PERCENT"])), min_donation=10)
         elif self.instance.donations_count:
             self.disable("platform_fee_percent", reason="Fixed after the first gift, so every donor saw the same fee.")
 
@@ -565,7 +582,7 @@ class DisbursementForm(StyledMixin, forms.Form):
 
 
 class GiveawayForm(StyledMixin, forms.ModelForm):
-    """Community Giveaway: 100% paid by Rihla or a sponsor. Entry is free – earned only by inviting friends."""
+    """Community Giveaway: 100% paid by vacation or a sponsor. Entry is free – earned only by inviting friends."""
 
     sections = [
         ("Giveaway", "", ["title", "description", "image_url", "is_featured"]),
@@ -573,7 +590,7 @@ class GiveawayForm(StyledMixin, forms.ModelForm):
          ["sponsor_type", "sponsor_name", "sponsor_note", "sponsor_logo_url"]),
         ("Prize", "Winners receive this as credit on a booking or as paid Equb contributions.",
          ["prize_type", "prize_title", "prize_value", "number_of_winners", "prize_package", "prize_equb_group"]),
-        ("Free entries", "Nobody pays to enter. Each person earns an entry for every N friends who register on Rihla "
+        ("Free entries", "Nobody pays to enter. Each person earns an entry for every N friends who register on vacation "
                          "with their referral code while the giveaway is running.", ["referrals_per_entry", "max_entries_per_user"]),
         ("Schedule", "", ["starts_at", "ends_at", "draw_at", "status"]),
     ]
@@ -600,8 +617,8 @@ class GiveawayForm(StyledMixin, forms.ModelForm):
         if not self.instance.pk:
             now = timezone.localtime().replace(second=0, microsecond=0)
             self.initial.update(starts_at=now, ends_at=now + timedelta(days=21), draw_at=now + timedelta(days=21, hours=1),
-                                referrals_per_entry=settings.RIHLA["REFERRALS_PER_GIVEAWAY_ENTRY"], status="LIVE",
-                                sponsor_name="Rihla Travel")
+                                referrals_per_entry=settings.VACATION["REFERRALS_PER_GIVEAWAY_ENTRY"], status="LIVE",
+                                sponsor_name="Vacation Equb")
         elif self.instance.entries_issued:
             self.disable("prize_type", "prize_value", "number_of_winners", "referrals_per_entry", "starts_at",
                          reason="Fixed after the first entry was earned.")
@@ -661,3 +678,61 @@ class StaffForm(StyledMixin, forms.Form):
         d = self.cleaned_data
         return User.objects.create_user(phone=d["phone"], password=d["password"], full_name=d["full_name"],
                                         email=d["email"], is_staff=True, is_superuser=d["is_superuser"])
+
+
+# ----------------------------------------------------------------- mobile app: home banners & update popup
+class BannerForm(StyledMixin, forms.ModelForm):
+    sections = [
+        ("Slide", "Shown in the banner carousel at the top of the app's Home page.",
+         ["image", "title", "subtitle", "button_label"]),
+        ("When tapped", "", ["link_type", "link_value"]),
+        ("Showing", "", ["sort_order", "is_active", "starts_at", "ends_at"]),
+    ]
+
+    class Meta:
+        from apps.core.models import Banner
+
+        model = Banner
+        fields = ["image", "title", "subtitle", "button_label", "link_type", "link_value", "sort_order", "is_active",
+                  "starts_at", "ends_at"]
+        labels = {"is_active": "Show in the app", "starts_at": "Show from", "ends_at": "Hide after",
+                  "link_type": "Opens", "link_value": "Slug or web address"}
+
+    def clean(self):
+        d = super().clean()
+        link, value = d.get("link_type"), (d.get("link_value") or "").strip()
+        if link in ("EQUB_PACKAGE", "EQUB_GROUP", "TRAVEL_PACKAGE", "CAMPAIGN", "GIVEAWAY", "URL") and not value:
+            self.add_error("link_value", "Say which one the slide should open.")
+        if link == "URL" and value and not value.startswith(("https://", "http://")):
+            self.add_error("link_value", "Web addresses start with https://")
+        if d.get("starts_at") and d.get("ends_at") and d["ends_at"] <= d["starts_at"]:
+            self.add_error("ends_at", "Must be after “Show from”.")
+        return d
+
+
+class AppReleaseForm(StyledMixin, forms.ModelForm):
+    sections = [
+        ("New version", "Add one when you publish an update to the Play Store or App Store. Phones with an older "
+                        "version see the update popup the next time they open the app.",
+         ["platform", "version", "kind", "min_supported_version", "store_url"]),
+        ("Popup", "", ["title", "message", "is_active"]),
+    ]
+
+    class Meta:
+        from apps.core.models import AppRelease
+
+        model = AppRelease
+        fields = ["platform", "version", "kind", "min_supported_version", "store_url", "title", "message", "is_active"]
+        labels = {"is_active": "Show the popup", "min_supported_version": "Oldest version still allowed"}
+
+    def clean_version(self):
+        v = (self.cleaned_data.get("version") or "").strip().lstrip("vV")
+        if not v or not all(p.isdigit() for p in v.split(".")):
+            raise ValidationError("Use numbers like 1.4.0")
+        return v
+
+    def clean_min_supported_version(self):
+        v = (self.cleaned_data.get("min_supported_version") or "").strip().lstrip("vV")
+        if v and not all(p.isdigit() for p in v.split(".")):
+            raise ValidationError("Use numbers like 1.2.0")
+        return v
