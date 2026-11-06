@@ -151,7 +151,9 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
-STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+# Vercel never runs collectstatic, so WhiteNoise must read CSS/JS straight
+# from each app's static/ folder (apps/console/static/...).
+WHITENOISE_USE_FINDERS = True
 MEDIA_URL = "media/"
 MEDIA_ROOT = BASE_DIR / "media"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
@@ -159,8 +161,8 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 STORAGES = {
     "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
     "staticfiles": {
-        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage" if not DEBUG
-        else "django.contrib.staticfiles.storage.StaticFilesStorage"
+        # Not the "Manifest" storage: that needs collectstatic and crashes every page without it.
+        "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"
     },
 }
 
@@ -228,6 +230,9 @@ VACATION = {
     "ENABLE_MOCK_GATEWAY": env_bool("ENABLE_MOCK_GATEWAY", DEBUG),
     "PUBLIC_BASE_URL": env("PUBLIC_BASE_URL", "http://localhost:8000"),
     "APP_DEEP_LINK": env("APP_DEEP_LINK", "vacation://payment-result"),
+    # Shown on /privacy/ and /account/delete/ – set SUPPORT_EMAIL to the inbox you really read.
+    "SUPPORT_EMAIL": env("SUPPORT_EMAIL", "support@vacationequb.com"),
+    "PRIVACY_UPDATED": env("PRIVACY_UPDATED", "6 November 2026"),
 }
 
 # --- Payment gateways ------------------------------------------------------
