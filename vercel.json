@@ -10,9 +10,10 @@
       }
     }
   ],
-  "build": {
-    "env": {
-      "ENABLE_COLLECTSTATIC": "1"
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "vacation/wsgi.py"
     }
-  }
+  ]
 }
