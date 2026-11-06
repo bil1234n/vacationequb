@@ -49,9 +49,8 @@ def env_list(key, default=""):
 SECRET_KEY = env("DJANGO_SECRET_KEY", "dev-insecure-change-me")
 DEBUG = env_bool("DJANGO_DEBUG", True)
 ALLOWED_HOSTS = ['.vercel.app', 'localhost', '127.0.0.1', '*']
-# The production domains (and tunnels for local testing) post forms over https.
+# Tunnels (ngrok) serve the console over https; trust their domains for form posts.
 CSRF_TRUSTED_ORIGINS = env_list("DJANGO_CSRF_TRUSTED_ORIGINS", "") + [
-    "https://vacationequb.com", "https://www.vacationequb.com", "https://vacationequb.vercel.app",
     "https://*.ngrok-free.app", "https://*.ngrok-free.dev", "https://*.ngrok.app", "https://*.ngrok.io",
 ]
 # ngrok / reverse proxies terminate https and say so in X-Forwarded-Proto.
@@ -86,7 +85,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
-    # "whitenoise.middleware.WhiteNoiseMiddleware",  <-- REMOVE THIS
+    "whitenoise.middleware.WhiteNoiseMiddleware", # WhiteNoise for static files on Vercel
     "corsheaders.middleware.CorsMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -150,21 +149,21 @@ TIME_ZONE = "Africa/Addis_Ababa"
 USE_I18N = True
 USE_TZ = True
 
-
+STATIC_URL = 'static/'
+STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 MEDIA_URL = "media/"
 MEDIA_ROOT = BASE_DIR / "media"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
-STATIC_URL = '/static/'
-STATIC_ROOT = BASE_DIR / "public" / "static"
-
 STORAGES = {
     "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
     "staticfiles": {
-        "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"
+        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage" if not DEBUG
+        else "django.contrib.staticfiles.storage.StaticFilesStorage"
     },
 }
+
 # Staff web console
 LOGIN_URL = "console:login"
 LOGIN_REDIRECT_URL = "console:dashboard"
@@ -229,9 +228,6 @@ VACATION = {
     "ENABLE_MOCK_GATEWAY": env_bool("ENABLE_MOCK_GATEWAY", DEBUG),
     "PUBLIC_BASE_URL": env("PUBLIC_BASE_URL", "http://localhost:8000"),
     "APP_DEEP_LINK": env("APP_DEEP_LINK", "vacation://payment-result"),
-    # Shown on /privacy/ and /account/delete/ – set SUPPORT_EMAIL to the inbox you really read.
-    "SUPPORT_EMAIL": env("SUPPORT_EMAIL", "support@vacationequb.com"),
-    "PRIVACY_UPDATED": env("PRIVACY_UPDATED", "6 November 2026"),
 }
 
 # --- Payment gateways ------------------------------------------------------
