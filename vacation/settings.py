@@ -150,7 +150,7 @@ TIME_ZONE = "Africa/Addis_Ababa"
 USE_I18N = True
 USE_TZ = True
 
-STATIC_URL = 'static/'
+STATIC_URL = '/static/'
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 MEDIA_URL = "media/"
@@ -163,7 +163,6 @@ STORAGES = {
         "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"
     },
 }
-
 # Staff web console
 LOGIN_URL = "console:login"
 LOGIN_REDIRECT_URL = "console:dashboard"
