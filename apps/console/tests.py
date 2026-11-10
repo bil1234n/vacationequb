@@ -6,7 +6,7 @@ from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
 
-from apps.core.testutils import make_equb, client_for, make_flight, make_package, make_user, passenger
+from apps.core.testutils import make_equb, client_for, make_flight, make_package, make_user, passenger, plenty_of_money
 from apps.equb.models import EqubGroup
 from apps.equb.services import join_group, start_group
 from apps.luckydraw.models import CrowdfundingCampaign, Giveaway
@@ -151,7 +151,7 @@ class ConsoleManageTests(TestCase):
         g = EqubGroup.objects.get()
         self.assertEqual(g.organizer, self.staff)
         self.assertEqual((g.max_members, g.frequency_days, str(g.end_date), g.draw_type, g.total_rounds),
-                         (1000, 90, "2030-04-01", "MANUAL", 1000))
+                         (1000, 30, "2030-04-01", "MANUAL", 1000))  # Months → one round a month
         self.assertEqual(g.price_per_person, Decimal("46500"))  # 15,500 × 3
         # 12 members over 3 rounds drawn → 4 winners in each draw
         r = self.client.post(reverse("console:equb_add"), {
@@ -218,6 +218,7 @@ class ConsoleManageTests(TestCase):
         self.assertEqual(Airport.objects.count(), 2)
 
 
+@plenty_of_money()
 class ConsoleEqubOperationsTests(TestCase):
     """Collections, call centre, terminations, reports, payouts and the member page."""
 
@@ -435,6 +436,7 @@ class ConsoleEqubPackageTests(TestCase):
         self.assertEqual(groups.data["results"][0]["equb_package"]["slug"], pkg.slug)
 
 
+@plenty_of_money()
 class ConsoleDrawNowAndRunningEditTests(TestCase):
     """Start with no members, edit a running Equb, and the Draw now page (automatic / manual, member / Group Equb)."""
 

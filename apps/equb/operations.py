@@ -48,8 +48,9 @@ def postpone_draw(rnd: EqubRound, staff, *, new_date: date, reason: str, notify_
         raise BusinessRuleError("The draw can't be before the round's due date.")
     old = rnd.draw_date
     rnd.draw_date = new_date
+    rnd.dates_fixed = True
     rnd.draw_note = (reason.strip() or f"Moved from {old:%d %b}")[:255]
-    rnd.save(update_fields=["draw_date", "draw_note", "updated_at"])
+    rnd.save(update_fields=["draw_date", "draw_note", "dates_fixed", "updated_at"])
     if notify_members and rnd.status == EqubRound.Status.COLLECTING:
         for m in rnd.group.memberships.filter(status__in=EqubMembership.LIVE_STATUSES).select_related("user"):
             notify(m.user, Notification.Kind.EQUB_REMINDER, f"{rnd.group.name}: round {rnd.number} draw moved",
@@ -406,3 +407,68 @@ def decide_rejoin(req, staff, *, approve: bool, note: str = "") -> EqubMembershi
            + (" You can pay now." if group.status == EqubGroup.Status.ACTIVE else ""),
            {"equb": group.slug, "membership": m.id})
     return m
+
+
+# --------------------------------------------------------------------------- round planner
+@transaction.atomic
+def plan_rounds(group: EqubGroup, staff, changes: dict[int, tuple[date, date]], *, shift_following: bool = False,
+                notify_members: bool = False) -> list[int]:
+    """
+    Set the exact due date and draw date of rounds that haven't been drawn yet.
+    ``changes`` maps round number → (due date, draw date). With ``shift_following`` every later round that
+    wasn't edited moves by the same number of days as the last edited one. Returns the round numbers that changed.
+    """
+    rounds = {r.number: r for r in group.rounds.select_for_update().order_by("number")}
+    today = timezone.localdate()
+    changed: list[int] = []
+    due_shift = draw_shift = None
+    for n in sorted(changes):
+        r = rounds.get(n)
+        due, draw = changes[n]
+        if r is None or r.status == EqubRound.Status.DRAWN or (r.due_date, r.draw_date) == (due, draw):
+            continue
+        if draw < due:
+            raise BusinessRuleError(f"Round {n}: the draw can't be before the due date.")
+        if draw < today:
+            raise BusinessRuleError(f"Round {n}: the draw date can't be in the past.")
+        due_shift, draw_shift = due - r.due_date, draw - r.draw_date
+        r.due_date, r.draw_date, r.dates_fixed = due, draw, True
+        changed.append(n)
+    if shift_following and changed and (due_shift or draw_shift):
+        # later rounds move by the same days as the last edited one (only its draw date may have changed)
+        last = changed[-1]
+        for n, r in rounds.items():
+            if n > last and n not in changed and r.status == EqubRound.Status.UPCOMING:
+                r.due_date, r.draw_date, r.dates_fixed = r.due_date + due_shift, r.draw_date + draw_shift, True
+                changed.append(n)
+    # rounds must stay in order
+    ordered = sorted(rounds.values(), key=lambda r: r.number)
+    for a, b in zip(ordered, ordered[1:]):
+        if b.due_date < a.due_date or b.draw_date < a.draw_date:
+            raise BusinessRuleError(f"Round {b.number} can't be before round {a.number}. Check the dates.")
+    for n in set(changed):
+        rounds[n].save(update_fields=["due_date", "draw_date", "dates_fixed", "updated_at"])
+    if changed and notify_members:
+        lines = ", ".join(f"round {n}: due {rounds[n].due_date:%d %b}, draw {rounds[n].draw_date:%d %b}"
+                          for n in sorted(set(changed))[:4])
+        for m in group.memberships.filter(status__in=EqubMembership.LIVE_STATUSES).select_related("user"):
+            notify(m.user, Notification.Kind.EQUB_REMINDER, f"{group.name}: new round dates",
+                   f"Updated schedule – {lines}{'…' if len(set(changed)) > 4 else ''}.",
+                   {"equb": group.slug, "membership": m.id})
+    return sorted(set(changed))
+
+
+@transaction.atomic
+def reset_round_dates(group: EqubGroup) -> int:
+    """Put every round not drawn yet back on the regular schedule (start date + frequency + grace days)."""
+    from .services import due_date_for
+
+    n = 0
+    for r in group.rounds.select_for_update().exclude(status=EqubRound.Status.DRAWN):
+        due = due_date_for(group, r.number)
+        draw = max(due + timedelta(days=group.grace_days), timezone.localdate())
+        if (r.due_date, r.draw_date, r.dates_fixed) != (due, draw, False):
+            r.due_date, r.draw_date, r.dates_fixed = due, draw, False
+            r.save(update_fields=["due_date", "draw_date", "dates_fixed", "updated_at"])
+            n += 1
+    return n

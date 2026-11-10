@@ -2,6 +2,29 @@
 {% block title %}Draw now{% endblock %}{% block heading %}Draw now{% endblock %}{% block crumbs %}<a href="{% url 'console:equb_draws' %}">Equb draws</a>{% endblock %}
 {% block actions %}<a class="btn ghost" href="{% url 'console:equb_draw_settings' %}">Draw settings</a>{% endblock %}
 {% block content %}
+<style>
+  .dn-funds{border:1px solid var(--line,#E1EAE5);border-radius:14px;padding:14px 16px;margin-bottom:16px;background:#FAFCFB}
+  .dn-funds-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+  .dn-funds-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+  .dn-funds-grid small{display:block;color:var(--muted,#6B7C74);font-size:11.5px}
+  .dn-funds-grid b{font-size:16px}
+  @media (max-width:900px){.dn-funds-grid{grid-template-columns:repeat(2,1fr)}}
+  .dn-meter{height:8px;border-radius:6px;background:#E7EEEA;margin-top:12px;overflow:hidden}
+  .dn-meter span{display:block;height:100%;background:linear-gradient(90deg,#0F382B,#2E7D5B);border-radius:6px;transition:width .3s}
+  .dn-meter.short span{background:#C0392B}
+  .dn-howmany{border:1px solid var(--line,#E1EAE5);border-radius:14px;padding:14px 16px;margin-bottom:16px}
+  .dn-label{display:block;font-weight:700;margin-bottom:8px}
+  .seg{display:inline-flex;background:#EEF3F0;border-radius:10px;padding:3px;gap:3px;flex-wrap:wrap}
+  .seg label{cursor:pointer}.seg input{display:none}
+  .seg span{display:block;padding:7px 14px;border-radius:8px;font-weight:600;font-size:13.5px}
+  .seg input:checked+span{background:#0F382B;color:#fff}
+  .dn-howmany-row{display:flex;align-items:center;gap:14px;margin-top:12px;flex-wrap:wrap}
+  .dn-num{width:110px;font-size:18px;font-weight:700;padding:8px 10px}
+  .dn-quick{display:flex;gap:6px;flex-wrap:wrap}
+  .dn-quick button{border:1px solid var(--line,#E1EAE5);background:#fff;border-radius:999px;padding:5px 11px;font-weight:600;font-size:12.5px;cursor:pointer}
+  .dn-quick button:hover{border-color:#0F382B}
+  .dn-skip{width:100%;margin-top:8px}
+</style>
 {{ data|json_script:"draw-data" }}
 {% if not data %}
 <div class="card"><div class="empty" style="padding:40px 20px">
@@ -55,6 +78,30 @@
 
       <section class="card ge-card" data-step="4" hidden>
         <div class="ge-step"><span>4</span><div><h2 data-step4-title>Choose the winner</h2><p class="muted" data-step4-sub></p></div></div>
+        <div class="dn-funds" data-funds hidden>
+          <div class="dn-funds-head"><b>Money for winners</b><span class="badge" data-f="badge"></span></div>
+          <div class="dn-funds-grid">
+            <div><small>Collected</small><b data-f="collected">—</b></div>
+            <div><small>Already paid to winners</small><b data-f="paid_out">—</b></div>
+            <div><small>Available now</small><b data-f="available">—</b></div>
+            <div><small>Each winner gets</small><b data-f="prize">—</b><small data-f="prize_sub"></small></div>
+          </div>
+          <div class="dn-meter"><span data-f="meter"></span></div>
+          <p class="small muted" data-f="line" style="margin:8px 0 0"></p>
+        </div>
+        <div class="dn-howmany" data-howmany hidden>
+          <label class="dn-label">How many people win?</label>
+          <div class="seg" role="radiogroup">
+            <label><input type="radio" name="win_mode" value="count" checked><span>Number of people</span></label>
+            <label><input type="radio" name="win_mode" value="percent"><span>% of members in the draw</span></label>
+          </div>
+          <div class="dn-howmany-row">
+            <div data-mode-count><input type="number" name="win_count" min="1" step="1" value="1" class="dn-num"> <span class="muted">people</span></div>
+            <div data-mode-percent hidden><input type="number" name="win_percent" min="1" max="100" step="1" value="10" class="dn-num"> <span class="muted">%</span></div>
+            <div class="dn-quick" data-quick></div>
+          </div>
+          <p class="small" data-howmany-line style="margin:8px 0 0"></p>
+        </div>
         <div data-pane="auto-member" hidden>
           <div class="dn-callout"><b data-auto-count></b><span>The system picks at random among everyone below. Members who are left out are shown with the reason.</span></div>
         </div>
@@ -86,12 +133,16 @@
           <dt>Draw date</dt><dd data-s="date">—</dd>
           <dt>Winner from</dt><dd data-s="scope">—</dd>
           <dt>In the draw</dt><dd data-s="pool">—</dd>
+          <dt>Money available</dt><dd data-s="avail">—</dd>
+          <dt>Enough for</dt><dd data-s="max">—</dd>
           <dt class="strong">Winners</dt><dd class="strong" data-s="k">—</dd>
           <dt class="strong">Each winner gets</dt><dd class="strong" data-s="pay">—</dd>
         </dl>
         <div class="mem-picked" data-s="names"></div>
         <div class="note-box red" data-s="warn" hidden></div>
         <button class="btn gold dn-go" type="submit" disabled data-go>✦ Draw now</button>
+        <button class="btn ghost dn-skip" type="submit" name="action" value="skip" formnovalidate data-skip hidden
+          onclick="return confirm('Close this round without a winner? The money stays in the Equb for the next draw.')">Close round without a winner</button>
         <p class="small muted" style="margin:10px 0 0">A draw can't be undone. Winners are notified and get a travel payout voucher.</p>
       </div>
     </aside>

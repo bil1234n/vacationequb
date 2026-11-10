@@ -1,0 +1,70 @@
+{% extends "console/base.html" %}{% load console_tags %}
+{% block title %}Chance settings{% endblock %}{% block heading %}Chance settings{% endblock %}{% block crumbs %}<a href="{% url 'console:equb_draws' %}">Equb draws</a>{% endblock %}
+{% block actions %}<a class="btn ghost" href="{% url 'console:equb_draws' %}?tab=members">See everyone's chance</a>{% endblock %}
+{% block content %}
+<style>
+  .ch-grid{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:20px;align-items:start}
+  @media (max-width:1000px){.ch-grid{grid-template-columns:1fr}}
+  .ch-rules{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  @media (max-width:700px){.ch-rules{grid-template-columns:1fr}}
+  .ch-rule{border:1px solid var(--line,#E1EAE5);border-radius:14px;padding:14px 16px;display:flex;flex-direction:column;gap:8px}
+  .ch-rule.up{border-left:4px solid #2E7D5B}.ch-rule.down{border-left:4px solid #C0392B}.ch-rule.floor{border-left:4px solid #C9A227}
+  .ch-rule label{font-weight:700}.ch-rule small{color:var(--muted,#6B7C74)}
+  .ch-rule .in{display:flex;align-items:center;gap:8px}.ch-rule input[type=number]{width:110px;font-size:18px;font-weight:700}
+  .ch-switch{display:flex;align-items:center;gap:12px;padding:14px 16px;border-radius:14px;background:#F2F7F4;margin-bottom:16px}
+  .ch-ex table td,.ch-ex table th{padding:8px 6px}.ch-ex .w{font-weight:800}
+  .ch-ex .barx{height:8px;border-radius:6px;background:#E7EEEA;overflow:hidden;min-width:60px}.ch-ex .barx i{display:block;height:100%;background:#0F382B}
+</style>
+<form method="post" novalidate>{% csrf_token %}
+{% if form.errors %}<div class="msg error">Please fix the highlighted fields below.</div>{% endif %}
+<div class="ch-grid">
+  <section class="card">
+    <div class="form-section-h"><h2>How the chance to win is worked out</h2>
+      <p class="muted">Everyone in a draw starts at a normal chance of 100. These rules add or take away a percentage of it. The automatic draw then picks at random, where a weight of 150 is 1.5× as likely as 100. The weights are saved with the draw so anyone can verify the result.</p></div>
+    <label class="ch-switch"><input type="checkbox" name="weighted_draw" {% if form.weighted_draw.value %}checked{% endif %} data-ch="on"> <span><b>Use winning chance rules</b><br><small class="muted">Off = everyone in the draw has exactly the same chance.</small></span></label>
+    <div class="ch-rules">
+      <div class="ch-rule up"><label>Paid this round on time</label><div class="in">+ <input type="number" name="chance_on_time_percent" value="{{ form.chance_on_time_percent.value }}" min="0" max="500" data-ch="ontime"> %</div><small>Paid on or before the round's due date.</small>{{ form.chance_on_time_percent.errors }}</div>
+      <div class="ch-rule up"><label>Paid in advance</label><div class="in">+ <input type="number" name="chance_prepaid_percent" value="{{ form.chance_prepaid_percent.value }}" min="0" max="500" data-ch="prepaid"> %</div><small>Has paid future rounds (or holds credit) ahead of time.</small>{{ form.chance_prepaid_percent.errors }}</div>
+      <div class="ch-rule up"><label>Each round on time in a row</label><div class="in">+ <input type="number" name="chance_streak_percent" value="{{ form.chance_streak_percent.value }}" min="0" max="100" data-ch="streak"> % per round</div><small>Rewards a steady payment record (from 2 rounds in a row).</small>{{ form.chance_streak_percent.errors }}</div>
+      <div class="ch-rule up"><label>Streak bonus at most</label><div class="in">+ <input type="number" name="chance_streak_cap_percent" value="{{ form.chance_streak_cap_percent.value }}" min="0" max="500" data-ch="cap"> %</div><small>Stops long-time members from crowding out new ones.</small>{{ form.chance_streak_cap_percent.errors }}</div>
+      <div class="ch-rule down"><label>Paid this round late</label><div class="in">− <input type="number" name="chance_late_percent" value="{{ form.chance_late_percent.value }}" min="0" max="100" data-ch="late"> %</div><small>Paid after the due date (still in the draw).</small>{{ form.chance_late_percent.errors }}</div>
+      <div class="ch-rule down"><label>Each earlier round still unpaid</label><div class="in">− <input type="number" name="chance_missed_percent" value="{{ form.chance_missed_percent.value }}" min="0" max="100" data-ch="missed"> % per round</div><small>Only matters when the Equb lets people who owe stay in the draw.</small>{{ form.chance_missed_percent.errors }}</div>
+      <div class="ch-rule floor" style="grid-column:1/-1"><label>Lowest chance anyone can have</label><div class="in"><input type="number" name="chance_min_percent" value="{{ form.chance_min_percent.value }}" min="1" max="100" data-ch="min"> % of a normal chance</div><small>Everyone in the draw keeps at least this much chance, however many penalties they have.</small>{{ form.chance_min_percent.errors }}</div>
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:18px"><a class="btn ghost" href="{% url 'console:equb_draws' %}">Cancel</a><button class="btn">Save chance settings</button></div>
+  </section>
+
+  <aside class="card ch-ex">
+    <div class="form-section-h"><h2>Example draw</h2><p class="muted">Five members in one draw with 1 winner. It updates while you change the numbers.</p></div>
+    <table class="t" style="width:100%"><thead><tr><th>Member</th><th class="r">Weight</th><th class="r">Chance</th></tr></thead><tbody data-ch-ex></tbody></table>
+    <p class="small muted" style="margin-top:10px">With 2 winners each chance roughly doubles (never above 100%).</p>
+  </aside>
+</div>
+</form>
+<script>
+(() => {
+  const g = (k) => document.querySelector(`[data-ch="${k}"]`);
+  const n = (k) => Math.max(0, parseFloat(g(k).value) || 0);
+  const people = [
+    ['Paid early + 4 on time in a row', (r) => [r.ontime, r.prepaid, Math.min(4 * r.streak, r.cap)]],
+    ['Paid on time', (r) => [r.ontime]],
+    ['Paid on time, 2 in a row', (r) => [r.ontime, Math.min(2 * r.streak, r.cap)]],
+    ['Paid late', (r) => [-r.late]],
+    ['Paid late, 1 earlier round unpaid', (r) => [-r.late, -r.missed]],
+  ];
+  const render = () => {
+    const r = { ontime: n('ontime'), prepaid: n('prepaid'), streak: n('streak'), cap: n('cap'), late: n('late'), missed: n('missed'), min: Math.max(1, n('min')) };
+    const on = g('on').checked;
+    const ws = people.map(([, f]) => (on ? Math.max(r.min, 100 + f(r).reduce((a, b) => a + b, 0)) : 100));
+    const total = ws.reduce((a, b) => a + b, 0);
+    document.querySelector('[data-ch-ex]').innerHTML = people.map(([label], i) => {
+      const pct = (100 * ws[i]) / total;
+      return `<tr><td>${label}</td><td class="r w">${ws[i]}</td><td class="r"><div style="display:flex;gap:8px;align-items:center;justify-content:flex-end"><div class="barx" style="width:70px"><i style="width:${pct.toFixed(1)}%"></i></div><b>${pct.toFixed(1)}%</b></div></td></tr>`;
+    }).join('');
+  };
+  document.querySelectorAll('[data-ch]').forEach((el) => el.addEventListener('input', render));
+  g('on').addEventListener('change', render);
+  render();
+})();
+</script>
+{% endblock %}

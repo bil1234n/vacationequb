@@ -271,6 +271,72 @@ def equb_round(request, slug, number):
     return render(request, "console/equb_round.html", ctx)
 
 
+@staff_required
+def equb_plan(request, slug):
+    """
+    Rounds & draw schedule: every round with its exact due date and draw date (editable until it is drawn),
+    collection progress, the money for winners, and the actions for the round being collected now.
+    """
+    g = get_object_or_404(EqubGroup, slug=slug)
+    here = reverse("console:equb_plan", args=[slug])
+    rounds = list(g.rounds.select_related("draw").prefetch_related("payouts__membership__user").order_by("number"))
+    if request.method == "POST":
+        from .templatetags.console_tags import bust_equb_counts
+
+        bust_equb_counts()
+        a = request.POST.get("action")
+        if a == "save":
+            changes, bad = {}, []
+            for r in rounds:
+                if r.status == EqubRound.Status.DRAWN:
+                    continue
+                due, draw = _date(request.POST.get(f"due_{r.number}")), _date(request.POST.get(f"draw_{r.number}"))
+                if not due or not draw:
+                    bad.append(r.number)
+                    continue
+                changes[r.number] = (due, draw)
+            if bad:
+                messages.error(request, f"Enter both dates for round{'s' if len(bad) > 1 else ''} {', '.join(map(str, bad))}.")
+            else:
+                done = _do(request, lambda: ops.plan_rounds(g, request.user, changes,
+                                                            shift_following=bool(request.POST.get("shift")),
+                                                            notify_members=bool(request.POST.get("notify"))))
+                if done is not None:
+                    messages.success(request, f"Saved – round{'s' if len(done) != 1 else ''} {', '.join(map(str, done))} "
+                                              f"{'have' if len(done) != 1 else 'has'} new dates." if done else "No dates changed.")
+        elif a == "reset":
+            n = _do(request, lambda: ops.reset_round_dates(g))
+            if n is not None:
+                messages.success(request, f"{n} round{'s' if n != 1 else ''} put back on the regular schedule.")
+        elif a == "skip":
+            cur = next((r for r in rounds if r.status == EqubRound.Status.COLLECTING), None)
+            if cur:
+                _do(request, lambda: services.close_round_without_winner(cur, request.user, request.POST.get("note", "")),
+                    f"Round {cur.number} closed without a winner – the money stays for the next draw.")
+        return redirect(here)
+    today = timezone.localdate()
+    current = next((r for r in rounds if r.status == EqubRound.Status.COLLECTING), None)
+    paid = dict(Contribution.objects.filter(round__group=g, status__in=Contribution.SETTLED)
+                .values_list("round__number").annotate(n=Count("id")))
+    slips = dict(Contribution.objects.filter(round__group=g).values_list("round__number").annotate(n=Count("id")))
+    draw_numbers = services.draw_round_numbers(g, rounds)
+    for r in rounds:
+        r.paid_n, r.slips_n = paid.get(r.number, 0), slips.get(r.number, 0)
+        r.editable = r.status != EqubRound.Status.DRAWN
+        r.has_draw = draw_numbers is None or r.number in draw_numbers
+        r.days = (r.draw_date - today).days
+        r.winners = [p.membership.user.full_name for p in r.payouts.all()]
+    pool = services.draw_pool(current) if current else None
+    return render(request, "console/equb_plan.html", {
+        "nav": "equb", "g": g, "rounds": rounds, "current": current, "today": today,
+        "funds": services.equb_funds(g, current) if g.status == EqubGroup.Status.ACTIVE else None,
+        "in_draw": pool["eligible_count"] if pool else 0, "waiting": pool["waiting_count"] if pool else 0,
+        "drawn": sum(1 for r in rounds if r.status == EqubRound.Status.DRAWN),
+        "draws_total": g.rounds_drawn if draw_numbers is not None else len(rounds),
+        "draws_done": sum(1 for r in rounds if r.status == EqubRound.Status.DRAWN
+                          and getattr(getattr(r, "draw", None), "executed_at", None))})
+
+
 # --------------------------------------------------------------------------- one member's place
 @staff_required
 def equb_member(request, pk):
@@ -598,7 +664,8 @@ def equb_draws(request):
                                                  has_won=False).count(),
         "due_now": due_all.filter(draw_date__lte=today).count(),
         "due_manual": due_all.filter(draw_date__lte=today, group__draw_type=EqubGroup.DrawType.MANUAL).count(),
-        "random": executed.filter(mode="RANDOM").count(),
+        "random": executed.filter(mode__in=["RANDOM", "WEIGHTED"]).count(),
+        "coming": due_all.count(),
     }
     kpi["verifiable"] = round(100 * kpi["random"] / kpi["rounds"]) if kpi["rounds"] else 100
     first_due = due_all.filter(draw_date__lte=today).first() or due_all.first()
@@ -613,7 +680,9 @@ def equb_draws(request):
               .prefetch_related("round__payouts__membership__user").order_by("-executed_at"))
         if pool.isdigit():
             qs = qs.filter(round__group_id=int(pool))
-        if mode in ("RANDOM", "SELECTED"):
+        if mode == "RANDOM":
+            qs = qs.filter(mode__in=["RANDOM", "WEIGHTED"])
+        elif mode == "SELECTED":
             qs = qs.filter(mode=mode)
         if q:
             qs = qs.filter(Q(round__group__name__icontains=q) | Q(round__payouts__membership__user__full_name__icontains=q)
@@ -643,6 +712,33 @@ def equb_draws(request):
         ctx.update(page=_pager(request, qs), status=status, statuses=EqubPayout.Status.choices, agg=agg,
                    by_status=dict(EqubPayout.objects.values_list("status").annotate(s=Sum("amount"))),
                    refund=reports.credit_to_refund())
+    elif tab == "members":
+        # Everyone in a draw that is coming up: their Equb group, standing and their chance to win.
+        show = request.GET.get("show", "")
+        rules = EqubSettings.load()
+        rounds = due_all.select_related("group")
+        if pool.isdigit():
+            rounds = rounds.filter(group_id=int(pool))
+        rows = []
+        for r in rounds:
+            info = services.draw_pool(r, rules, today)
+            for e in info["entries"]:
+                m = e["_m"]
+                waiting = m.status == EqubMembership.Status.ACTIVE and not m.has_won
+                if not waiting and show != "all":
+                    continue
+                if show == "in" and not e["eligible"] or show == "out" and e["eligible"]:
+                    continue
+                if q and q.lower() not in e["name"].lower() and q not in (e["phone"] or ""):
+                    continue
+                rows.append({"m": m, "round": r, "name": e["name"], "phone": e["phone"], "pos": e["position"],
+                             "eligible": e["eligible"], "reasons": e["reasons"], "standing": e["standing"],
+                             "standing_label": e["standing_label"], "weight": e["weight"], "factors": e["factors"],
+                             "odds": e["odds"], "share": e["share"], "won": m.has_won,
+                             "in_draw": info["eligible_count"]})
+        rows.sort(key=lambda x: (not x["eligible"], -x["odds"], x["round"].group.name, x["pos"]))
+        ctx.update(page=_pager(request, rows), show=show, rules=rules,
+                   member_total=len(rows), member_in=sum(1 for x in rows if x["eligible"]))
     else:
         tab = ctx["tab"] = "due"
         qs = due_all
@@ -662,6 +758,20 @@ def equb_draws(request):
             r.days = (r.draw_date - today).days
         ctx.update(page=page, when=when)
     return render(request, "console/equb_draws.html", ctx)
+
+
+@staff_required
+def equb_chance_settings(request):
+    """Winning-chance rules for automatic draws: who gets more (or less) chance, with a live example."""
+    obj = EqubSettings.load()
+    form = f.ChanceSettingsForm(request.POST or None, instance=obj)
+    if request.method == "POST" and form.is_valid():
+        rules = form.save(commit=False)
+        rules.updated_by = request.user
+        rules.save()
+        messages.success(request, "Chance settings saved – they apply to the next automatic draw.")
+        return redirect(reverse("console:equb_draws") + "?tab=members")
+    return render(request, "console/equb_chance_settings.html", {"nav": "equb_draws", "form": form, "rules": obj})
 
 
 @staff_required
@@ -705,7 +815,8 @@ def _draw_now_data(rounds) -> list[dict]:
             members.append({"id": m.id, "name": e["name"], "phone": e["phone"], "pos": e["position"], "team": e["team_id"],
                             "eligible": e["eligible"], "won": m.has_won,
                             "waiting": m.status == EqubMembership.Status.ACTIVE and not m.has_won,
-                            "why": "; ".join(e["reasons"])})
+                            "why": "; ".join(e["reasons"]), "odds": e["odds"], "share": e["share"],
+                            "weight": e["weight"], "factors": [f"{x['label']} {x['pct']:+d}%" for x in e["factors"]]})
         team_rows = []
         for t in teams[g.id]:
             mine = [x for x in members if x["team"] == t.id]
@@ -713,7 +824,10 @@ def _draw_now_data(rounds) -> list[dict]:
                               "owner": t.owner.full_name, "size": len(mine),
                               "eligible": sum(1 for x in mine if x["eligible"]),
                               "waiting": sum(1 for x in mine if x["waiting"])})
+        fund = services.equb_funds(g, r)
         out.append({"id": r.pk, "equb": g.name, "slug": g.slug, "package": g.equb_package.name if g.equb_package_id else "",
+                    "funds": {k: (float(v) if not isinstance(v, int) else v) for k, v in fund.items()},
+                    "price": float(g.price_per_person), "members_total": g.members_count,
                     "round": r.number, "total": g.total_rounds, "draw_date": r.draw_date.strftime("%d %b %Y"),
                     "due": r.draw_date <= timezone.localdate(), "draw_type": g.get_draw_type_display(),
                     "amount": float(g.contribution_amount), "every": g.every, "wpr": g.winners_per_round,
@@ -738,6 +852,10 @@ def equb_draw_now(request):
         team = GroupEqub.objects.filter(pk=p.get("team") or 0, is_active=True).first() if p.get("team") else None
         note = p.get("note", "").strip()
         error = None
+        if p.get("action") == "skip" and rnd:
+            _do(request, lambda: services.close_round_without_winner(rnd, request.user, note),
+                f"{rnd.group.name} round {rnd.number} closed without a winner – the money stays for the next draw.")
+            return redirect(reverse("console:equb_draws"))
         if method not in ("auto", "manual"):
             error = "Choose how to draw: automatic or manual."
         elif not rnd:
@@ -751,8 +869,18 @@ def equb_draw_now(request):
             return redirect(reverse("console:equb_draw_now") + (f"?round={rnd.pk}" if rnd else ""))
         payouts = None
         if method == "auto":
-            payouts = _do(request, lambda: services.run_draw(rnd, executed_by=request.user,
-                                                             team=team if scope == "group" else None))
+            how = p.get("win_mode", "count")
+            count = int(p.get("win_count") or 0) if (p.get("win_count") or "").isdigit() else None
+            try:
+                percent = Decimal(p.get("win_percent")) if how == "percent" and p.get("win_percent") else None
+            except Exception:  # noqa: BLE001 – a bad number in the form
+                percent = None
+            if how == "percent" and (percent is None or percent <= 0):
+                messages.error(request, "Enter the percentage of members in the draw who should win.")
+                return redirect(reverse("console:equb_draw_now") + f"?round={rnd.pk}")
+            payouts = _do(request, lambda: services.run_draw(
+                rnd, executed_by=request.user, team=team if scope == "group" else None,
+                count=count if how != "percent" else None, percent=percent))
         else:
             pool = services.draw_pool(rnd)
             if scope == "group":

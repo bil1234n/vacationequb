@@ -58,13 +58,17 @@ class Command(BaseCommand):
         now = timezone.now()
         # Payment-only rounds (everyone has won) close on their draw day whatever the draw type.
         from apps.equb.models import EqubMembership
-        from apps.equb.services import close_payment_round
+        from apps.equb.services import close_payment_round, is_draw_round
 
         out["payment_rounds_closed"] = 0
         for rnd in EqubRound.objects.filter(status="COLLECTING", draw_date__lte=timezone.localdate()).select_related("group"):
-            if rnd.group.current_round == rnd.number and not rnd.group.memberships.filter(
-                    status=EqubMembership.Status.ACTIVE, has_won=False).exists():
+            if rnd.group.current_round != rnd.number:
+                continue
+            if not rnd.group.memberships.filter(status=EqubMembership.Status.ACTIVE, has_won=False).exists():
                 close_payment_round(rnd)
+                out["payment_rounds_closed"] += 1
+            elif not is_draw_round(rnd):  # not one of the "Rounds drawn": it only collects money
+                close_payment_round(rnd, "Payment-only round – no draw this round")
                 out["payment_rounds_closed"] += 1
         if run_draws:
             for rnd in EqubRound.objects.filter(status="COLLECTING", draw_date__lte=timezone.localdate(),

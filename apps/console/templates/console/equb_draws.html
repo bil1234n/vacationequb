@@ -2,6 +2,7 @@
 {% block title %}Equb draws{% endblock %}{% block heading %}Equb draws{% endblock %}{% block crumbs %}Equb{% endblock %}
 {% block actions %}
   <a class="btn ghost" href="{% url 'console:equb_draw_settings' %}"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-3px;margin-right:4px"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></svg>Draw settings</a>
+  <a class="btn ghost" href="{% url 'console:equb_chance_settings' %}"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-3px;margin-right:4px"><path d="M12 20V10M18 20V4M6 20v-4"/></svg>Chance settings</a>
   <a class="btn gold" href="{% url 'console:equb_draw_now' %}">✦ Draw now</a>
 {% endblock %}
 {% block content %}
@@ -15,15 +16,17 @@
 </div>
 
 <div class="tabs mt-l">
-  <a href="?tab=due" class="{% if tab == 'due' %}on{% endif %}">Due for draw <span class="count {% if kpi.due_now %}alert{% endif %}">{{ kpi.due_now }}</span></a>
+  <a href="?tab=due" class="{% if tab == 'due' %}on{% endif %}">Due for draw <span class="count {% if kpi.due_now %}alert{% endif %}">{{ kpi.coming }}</span></a>
+  <a href="?tab=members" class="{% if tab == 'members' %}on{% endif %}">Draw members <span class="count">{{ kpi.waiting }}</span></a>
   <a href="?tab=history" class="{% if tab == 'history' %}on{% endif %}">Draw history <span class="count">{{ kpi.rounds }}</span></a>
   <a href="?tab=payouts" class="{% if tab == 'payouts' %}on{% endif %}">Winner payouts{% if liability.issued_count %} <span class="count">{{ liability.issued_count }}</span>{% endif %}</a>
 </div>
 
 <div class="card">
   <form class="toolbar" method="get" style="margin-bottom:6px"><input type="hidden" name="tab" value="{{ tab }}">
-    <input class="grow" type="search" name="q" value="{{ q }}" placeholder="{% if tab == 'due' %}Search group…{% else %}Search group, winner, phone or voucher…{% endif %}">
+    <input class="grow" type="search" name="q" value="{{ q }}" placeholder="{% if tab == 'due' %}Search group…{% elif tab == 'members' %}Search member name or phone…{% else %}Search group, winner, phone or voucher…{% endif %}">
     <select name="pool"><option value="">All groups</option>{% for p in pool_choices %}<option value="{{ p.id }}" {% if pool == p.id|stringformat:"s" %}selected{% endif %}>{{ p.name }}</option>{% endfor %}</select>
+    {% if tab == 'members' %}<select name="show"><option value="">Waiting to win</option><option value="in" {% if show == 'in' %}selected{% endif %}>In the draw</option><option value="out" {% if show == 'out' %}selected{% endif %}>Left out</option><option value="all" {% if show == 'all' %}selected{% endif %}>Everyone (incl. winners)</option></select>{% endif %}
     {% if tab == 'due' %}<select name="when"><option value="">All coming draws</option><option value="now" {% if when == 'now' %}selected{% endif %}>Due now</option></select>{% endif %}
     {% if tab == 'history' %}<select name="mode"><option value="">Random &amp; selected</option><option value="RANDOM" {% if mode == 'RANDOM' %}selected{% endif %}>Random draws</option><option value="SELECTED" {% if mode == 'SELECTED' %}selected{% endif %}>Selected by staff</option></select>{% endif %}
     {% if tab == 'payouts' %}<select name="status"><option value="">All payouts</option>{% for v, l in statuses %}<option value="{{ v }}" {% if status == v %}selected{% endif %}>{{ l }}</option>{% endfor %}</select>{% endif %}
@@ -45,6 +48,28 @@
       <td class="r nowrap"><a class="btn {% if r.is_due %}gold{% else %}ghost{% endif %} sm" href="{% url 'console:equb_draw_now' %}?round={{ r.pk }}">Draw now</a>
         <a class="btn ghost sm" href="{% url 'console:equb_round' r.group.slug r.number %}">Open</a></td></tr>
     {% empty %}<tr><td colspan="8" class="empty">No rounds are waiting for a draw{% if q or pool or when %} with these filters{% endif %}.</td></tr>{% endfor %}</tbody>
+  </table></div>
+
+{% elif tab == 'members' %}
+  <div class="note-box {% if rules.weighted_draw %}green{% endif %}" style="margin:6px 0 12px">
+    {% if rules.weighted_draw %}<b>Winning chance rules are on.</b> Paid on time +{{ rules.chance_on_time_percent }}% · paid in advance +{{ rules.chance_prepaid_percent }}% · each on-time round in a row +{{ rules.chance_streak_percent }}% (max +{{ rules.chance_streak_cap_percent }}%) · paid late −{{ rules.chance_late_percent }}% · each unpaid earlier round −{{ rules.chance_missed_percent }}%. Nobody goes below {{ rules.chance_min_percent }}% of a normal chance.
+    {% else %}<b>Winning chance rules are off</b> – everyone in a draw has exactly the same chance.{% endif %}
+    <a href="{% url 'console:equb_chance_settings' %}" style="margin-left:6px">Change →</a>
+  </div>
+  <div class="small muted" style="margin-bottom:8px">{{ member_in }} of {{ member_total }} member{{ member_total|pluralize }} shown are in a draw. Chance = how likely each person is to win their Equb's next draw (winners per round × their share of all weights).</div>
+  <div class="table-wrap"><table class="t">
+    <thead><tr><th>#</th><th>Member</th><th>Equb group</th><th>Round</th><th>Standing</th><th>Why the chance is higher / lower</th><th class="r">Weight</th><th class="r" style="width:150px">Chance</th></tr></thead>
+    <tbody>{% for x in page %}<tr class="{% if not x.eligible %}muted{% endif %}">
+      <td class="num">{{ x.pos }}</td>
+      <td><a class="strong" href="{% url 'console:equb_member' x.m.id %}">{{ x.name }}</a><div class="small">{{ x.phone|tel }}</div></td>
+      <td><a href="{% url 'console:equb' x.round.group.slug %}">{{ x.round.group.name }}</a><div class="small muted">{{ x.in_draw }} in the draw</div></td>
+      <td class="nowrap">{{ x.round.number }}/{{ x.round.group.total_rounds }}<div class="small muted">draw {{ x.round.draw_date|date:"d M" }}</div></td>
+      <td><span class="badge {% if x.standing == 'current' or x.standing == 'ahead' %}b-green{% elif x.standing == 'never_paid' or x.standing == 'blocked' or x.standing == 'suspended' %}b-red{% elif x.standing == 'warned' %}b-gold{% else %}b-grey{% endif %}">{{ x.standing_label }}</span></td>
+      <td class="small">{% if x.won %}🏆 Already won{% elif not x.eligible %}<span style="color:var(--red)">Left out: {{ x.reasons|join:"; " }}</span>{% else %}
+        {% for fct in x.factors %}<span class="badge {% if fct.pct > 0 %}b-green{% else %}b-red{% endif %}" style="margin:0 4px 4px 0">{{ fct.label }} {% if fct.pct > 0 %}+{% endif %}{{ fct.pct }}%</span>{% empty %}<span class="muted">Normal chance</span>{% endfor %}{% endif %}</td>
+      <td class="r num">{% if x.eligible %}{{ x.weight }}{% else %}—{% endif %}</td>
+      <td class="r">{% if x.eligible %}<div style="display:flex;gap:8px;align-items:center;justify-content:flex-end"><div class="bar" style="width:70px"><i style="width:{{ x.odds }}%"></i></div><b class="num">{{ x.odds }}%</b></div>{% else %}<span class="muted">0%</span>{% endif %}</td>
+    </tr>{% empty %}<tr><td colspan="8" class="empty">No members in a coming draw{% if q or pool or show %} with these filters{% endif %}.</td></tr>{% endfor %}</tbody>
   </table></div>
 
 {% elif tab == 'history' %}

@@ -3,7 +3,7 @@
 {% block crumbs %}{% if g.equb_package %}<a href="{% url 'console:equb_packages' %}">Equb packages</a> / <a href="{% url 'console:equb_package' g.equb_package.slug %}">{{ g.equb_package.name }}</a>{% else %}<a href="{% url 'console:equbs' %}">Equb groups</a>{% endif %}{% endblock %}
 {% block actions %}
   {% if g.status == 'OPEN' %}<form method="post" data-confirm="Start this Equb now with {{ g.members_count }} members? Rounds will be scheduled and members notified.">{% csrf_token %}<input type="hidden" name="action" value="start"><button class="btn gold">Start Equb</button></form>{% endif %}
-  {% if current %}<a class="btn gold" href="{% url 'console:equb_round' g.slug current.number %}">Round {{ current.number }} draw →</a>
+  {% if current %}<a class="btn gold" href="{% url 'console:equb_plan' g.slug %}">Round {{ current.number }} draw →</a>{% elif g.status == 'ACTIVE' or g.status == 'COMPLETED' %}<a class="btn ghost" href="{% url 'console:equb_plan' g.slug %}">Rounds &amp; draws</a>
   <form method="post">{% csrf_token %}<input type="hidden" name="action" value="sweep"><button class="btn ghost" title="Mark overdue contributions late, add late fees and notify members">Flag late payers</button></form>{% endif %}
   <a class="btn ghost" href="{% url 'console:equb_edit' g.slug %}">Edit</a>
 {% endblock %}

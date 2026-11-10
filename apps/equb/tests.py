@@ -6,7 +6,7 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from apps.core.exceptions import BusinessRuleError
-from apps.core.testutils import make_equb, client_for, make_package, make_user, passenger
+from apps.core.testutils import make_equb, client_for, make_package, make_user, passenger, plenty_of_money
 from apps.notifications.models import Notification
 from apps.payments.models import PaymentTransaction
 from apps.travel.models import Booking
@@ -28,6 +28,7 @@ def checkout(reference, result="SUCCESS"):
     return APIClient().post(f"/api/payments/mock/checkout/{reference}/", {"result": result}, format="json")
 
 
+@plenty_of_money()
 class EqubTests(TestCase):
     def setUp(self):
         self.pkg = make_package(price=60000)
@@ -146,6 +147,7 @@ class EqubTests(TestCase):
         self.assertEqual(EqubMembership.objects.get(pk=c.membership_id).missed_count, 1)
 
 
+@plenty_of_money()
 class ProfessionalEqubTests(TestCase):
     """Standing, multi-round & office payments, draw eligibility, exits, terminations, reminders."""
 
@@ -329,6 +331,7 @@ class ProfessionalEqubTests(TestCase):
         self.assertEqual(row["standing"]["next_due_amount"], "1000.00")
 
 
+@plenty_of_money()
 class DrawSelectionAndGroupEqubTests(TestCase):
     """Manual draws (staff pick the winner), frequency in days, and customer Group Equbs."""
 
@@ -346,9 +349,9 @@ class DrawSelectionAndGroupEqubTests(TestCase):
     def test_days_schedule_and_labels(self):
         self.assertEqual(self.group.status, "ACTIVE")
         self.assertEqual([r.due_date - self.group.start_date for r in self.group.rounds.order_by("number")],
-                         [timedelta(days=0), timedelta(days=10), timedelta(days=20)])
+                         [timedelta(days=0), timedelta(days=1), timedelta(days=2)])  # Days → one round a day
         self.assertEqual((self.group.frequency, self.group.get_frequency_display(), self.group.every),
-                         ("CUSTOM", "Every 10 days", "every 10 days"))
+                         ("DAILY", "Daily", "every day"))
         self.assertEqual(self.group.end_date, self.group.start_date + timedelta(days=3))
 
     def test_staff_select_winner(self):
@@ -609,6 +612,7 @@ class PaymentRoundsRejoinPendingTests(TestCase):
         rules.save()
         services.join_group(self.user, self.g)
 
+    @plenty_of_money()
     def test_still_to_pay_is_price_per_person_and_winners_keep_paying(self):
         m = EqubMembership.objects.get(group=self.g, user=self.user)
         self.assertEqual(self.g.price_per_person, Decimal("40"))  # 10 × 4
@@ -616,16 +620,18 @@ class PaymentRoundsRejoinPendingTests(TestCase):
         services.start_group(self.g)
         self.g.refresh_from_db()
         self.assertEqual(self.g.rounds.count(), 4)  # 4 payments although only 2 draws
-        services.run_draw(self.g.rounds.get(number=1))
+        self.assertEqual(services.draw_round_numbers(self.g), {2, 4})  # the draws are spread out
+        services.close_round_without_winner(self.g.rounds.get(number=1))  # round 1 only collects
+        services.run_draw(self.g.rounds.get(number=2))
         m.refresh_from_db()
         self.assertTrue(m.has_won)
         self.g.refresh_from_db()
-        self.assertEqual(self.g.status, "ACTIVE")  # not completed: the winner still owes rounds 2-4
-        self.assertEqual(self.g.current_round, 2)
-        self.assertEqual(services.run_draw(self.g.rounds.get(number=2)), [])  # payment-only round closes
-        self.g.refresh_from_db()
+        self.assertEqual(self.g.status, "ACTIVE")  # not completed: the winner still owes rounds 3-4
         self.assertEqual(self.g.current_round, 3)
-        self.assertTrue(Contribution.objects.filter(membership=m, round__number=3).exists())
+        services.close_round_without_winner(self.g.rounds.get(number=3))
+        self.g.refresh_from_db()
+        self.assertEqual(services.run_draw(self.g.rounds.get(number=4)), [])  # everyone won: payment-only round closes
+        self.assertTrue(Contribution.objects.filter(membership=m, round__number=4).exists())
 
     def test_rounds_drawn_cannot_exceed_duration(self):
         from apps.console.forms import EqubForm
@@ -763,3 +769,283 @@ class FollowUpFixesTests(TestCase):
         counts = equb_counts()
         self.assertEqual(counts["uncalled"], 0)
         self.assertEqual(counts["terminations"], 0)
+
+
+class DrawMoneyRuleTests(TestCase):
+    """Each winner receives the price per person, so the Equb must hold that much money per winner."""
+
+    def setUp(self):
+        self.staff = make_user("Staff", staff=True)
+        self.users = [make_user(f"Member {i}") for i in range(6)]
+        self.g = make_equb(name="Money", contribution_amount=Decimal("1"), frequency_days=3, max_members=8,
+                           duration_value=3, duration_unit="DAYS", start_date=timezone.localdate())
+        for u in self.users:
+            services.join_group(u, self.g)
+        rules = EqubSettings.load()
+        rules.min_paid_rounds_to_win = 0
+        rules.save()
+        services.start_group(self.g)
+        self.rnd = self.g.rounds.get(number=1)
+
+    def pay(self, n):
+        Contribution.objects.filter(pk__in=list(self.rnd.contributions.values_list("pk", flat=True)[:n])).update(status="PAID")
+
+    def test_no_draw_until_one_full_prize_is_collected(self):
+        self.pay(2)  # 2 ETB collected, prize is 3 ETB (1 × 3)
+        f = services.equb_funds(self.g, self.rnd)
+        self.assertEqual((f["available"], f["prize"], f["max_winners"]), (Decimal("2.00"), Decimal("3.00"), 0))
+        with self.assertRaisesMessage(BusinessRuleError, "1 ETB more must be collected"):
+            services.run_draw(self.rnd)
+
+    def test_number_of_winners_is_capped_by_money_and_each_gets_price_per_person(self):
+        self.pay(6)  # 6 ETB → money for 2 winners of 3 ETB
+        payouts = services.run_draw(self.rnd, count=5)
+        self.assertEqual(len(payouts), 2)
+        self.assertTrue(all(p.gross_amount == Decimal("3.00") for p in payouts))
+        self.assertEqual(services.equb_funds(self.g)["available"], Decimal("0.00"))
+
+    def test_percentage_of_the_draw(self):
+        self.pay(6)
+        self.assertEqual(services.winners_wanted(6, percent=50), 3)
+        self.assertEqual(services.winners_wanted(6, percent=10), 1)  # at least one
+        payouts = services.run_draw(self.rnd, percent=Decimal("30"))  # 30% of 6 = 2
+        self.assertEqual(len(payouts), 2)
+
+    def test_manual_pick_more_than_money_allows_is_refused(self):
+        self.pay(3)  # money for 1 winner
+        ids = list(self.g.memberships.values_list("id", flat=True)[:2])
+        with self.assertRaisesMessage(BusinessRuleError, "enough for 1 winner"):
+            services.run_draw(self.rnd, self.staff, winner_ids=ids, exact=False)
+
+    def test_close_round_without_winner_keeps_the_money(self):
+        self.pay(2)
+        services.close_round_without_winner(self.rnd, self.staff)
+        self.g.refresh_from_db()
+        self.assertEqual(self.g.current_round, 2)
+        self.assertEqual(services.equb_funds(self.g)["available"], Decimal("2.00"))
+
+    def test_console_draw_with_count_and_percent(self):
+        self.pay(6)
+        self.client.force_login(self.staff)
+        r = self.client.get(f"/console/equb/draws/new/?round={self.rnd.pk}")
+        self.assertContains(r, "Money for winners")
+        r = self.client.post("/console/equb/draws/new/", {"method": "auto", "round": self.rnd.pk, "scope": "member",
+                                                          "win_mode": "percent", "win_percent": "100"})
+        self.assertEqual(r.status_code, 302)
+        self.assertEqual(self.rnd.payouts.count(), 2)  # 100% of 6 asked, money for 2
+
+
+class ChanceRulesAndPlannerTests(TestCase):
+    def setUp(self):
+        from apps.core import fairness  # noqa: F401
+        self.staff = make_user("Staff", staff=True)
+        self.users = [make_user(f"M{i}") for i in range(4)]
+        self.g = make_equb(name="Chance", contribution_amount=Decimal("1"), frequency_days=3, max_members=8,
+                           duration_value=4, duration_unit="DAYS", start_date=timezone.localdate())
+        for u in self.users:
+            services.join_group(u, self.g)
+        rules = EqubSettings.load()
+        rules.min_paid_rounds_to_win = 0
+        rules.save()
+        services.start_group(self.g)
+        self.rnd = self.g.rounds.get(number=1)
+        slips = list(self.rnd.contributions.order_by("membership__position"))
+        on_time = timezone.now()
+        late = timezone.make_aware(timezone.datetime.combine(self.rnd.due_date + timedelta(days=1),
+                                                             timezone.datetime.min.time())) + timedelta(hours=10)
+        Contribution.objects.filter(pk__in=[slips[0].pk, slips[1].pk]).update(status="PAID", paid_at=on_time)
+        Contribution.objects.filter(pk=slips[2].pk).update(status="PAID", paid_at=late)
+        Contribution.objects.filter(pk=slips[3].pk).update(status="PAID", paid_at=on_time)
+        # member 0 also paid round 2 in advance
+        EqubMembership.objects.filter(pk=slips[0].membership_id).update(prepaid_credit=Decimal("1"))
+
+    def test_weights_follow_the_rules(self):
+        pool = services.draw_pool(self.rnd)
+        w = {e["position"]: e["weight"] for e in pool["entries"]}
+        self.assertEqual(w[1], 160)  # on time +50, in advance +10
+        self.assertEqual(w[2], 150)  # on time
+        self.assertEqual(w[3], 50)   # late −50
+        self.assertAlmostEqual(sum(e["share"] for e in pool["entries"]), 100, delta=0.5)
+        self.assertGreater(pool["entries"][0]["odds"], pool["entries"][2]["odds"])
+
+    def test_rules_off_means_equal_chance(self):
+        rules = EqubSettings.load()
+        rules.weighted_draw = False
+        rules.save()
+        self.assertEqual({e["weight"] for e in services.draw_pool(self.rnd)["entries"]}, {100})
+
+    def test_weighted_draw_is_verifiable(self):
+        with plenty_of_money():
+            services.run_draw(self.rnd, count=2)
+        self.rnd.refresh_from_db()
+        self.assertEqual(self.rnd.draw.mode, "WEIGHTED")
+        self.assertEqual(len(self.rnd.draw.weights), 4)
+        v = services.verify_draw(self.rnd)
+        self.assertTrue(v["matches"])
+        self.assertTrue(v["commitment_ok"])
+
+    def test_weighted_pick_favours_heavier_entries(self):
+        from apps.core import fairness
+        wins = [0, 0]
+        for i in range(400):
+            idx = fairness.pick_weighted(fairness.new_seed(), f"t{i}", [300, 100], 1)[0]
+            wins[idx] += 1
+        self.assertGreater(wins[0], wins[1] * 2)  # ~75% vs 25%
+
+    def test_planner_sets_dates_and_they_survive_a_sync(self):
+        new_draw = self.g.rounds.get(number=2).draw_date + timedelta(days=5)
+        r2 = self.g.rounds.get(number=2)
+        ops = operations.plan_rounds(self.g, self.staff, {2: (r2.due_date + timedelta(days=5), new_draw)},
+                                     shift_following=True)
+        self.assertIn(2, ops)
+        self.assertIn(3, ops)  # later rounds moved too
+        services.sync_running_group(self.g)  # e.g. someone joins late – hand-set dates stay
+        self.assertEqual(self.g.rounds.get(number=2).draw_date, new_draw)
+        with self.assertRaises(BusinessRuleError):
+            operations.plan_rounds(self.g, self.staff, {3: (r2.due_date, r2.due_date - timedelta(days=1))})
+        self.assertGreaterEqual(operations.reset_round_dates(self.g), 1)
+        self.assertFalse(self.g.rounds.get(number=2).dates_fixed)
+
+    def test_console_pages(self):
+        self.client.force_login(self.staff)
+        self.assertContains(self.client.get(f"/console/equb/{self.g.slug}/rounds/"), "Round dates")
+        self.assertContains(self.client.get("/console/equb/draws/?tab=members"), "Draw members")
+        self.assertContains(self.client.get("/console/equb/draws/chance/"), "Example draw")
+        r = self.client.post("/console/equb/draws/chance/", {"weighted_draw": "on", "chance_on_time_percent": 40,
+                             "chance_prepaid_percent": 10, "chance_streak_percent": 5, "chance_streak_cap_percent": 25,
+                             "chance_late_percent": 50, "chance_missed_percent": 25, "chance_min_percent": 10})
+        self.assertEqual(r.status_code, 302)
+        self.assertEqual(EqubSettings.load().chance_on_time_percent, 40)
+        r3 = self.g.rounds.get(number=3)
+        data = {"action": "save", "shift": "on"}  # daily rounds: the later ones move with it
+        for r in self.g.rounds.exclude(status="DRAWN"):
+            data[f"due_{r.number}"] = r.due_date.isoformat()
+            data[f"draw_{r.number}"] = (r.draw_date + timedelta(days=2 if r.number == 3 else 0)).isoformat()
+        self.client.post(f"/console/equb/{self.g.slug}/rounds/", data)
+        self.assertEqual(self.g.rounds.get(number=3).draw_date, r3.draw_date + timedelta(days=2))
+
+
+@plenty_of_money()
+class RoundsDrawnFewerThanPaymentsTests(TestCase):
+    """12 places, 7 payments, Rounds drawn = 2 → 7 rounds, but only rounds 4 and 7 have a draw."""
+
+    def setUp(self):
+        self.users = [make_user(f"P{i}") for i in range(3)]
+        self.g = make_equb(name="Seven pay two draws", contribution_amount=Decimal("1"), frequency_days=7, max_members=12,
+                           duration_value=7, duration_unit="DAYS", rounds_drawn=2, start_date=timezone.localdate())
+        for u in self.users:
+            services.join_group(u, self.g)
+        rules = EqubSettings.load()
+        rules.min_paid_rounds_to_win = 0
+        rules.save()
+        services.start_group(self.g)
+        self.g.refresh_from_db()
+
+    def _pay_current(self):
+        rnd = self.g.rounds.get(status="COLLECTING")
+        rnd.contributions.update(status="PAID", paid_at=timezone.now())
+        return rnd
+
+    def test_only_the_rounds_drawn_have_a_draw(self):
+        self.assertEqual(self.g.rounds.count(), 7)
+        self.assertEqual(services.draw_round_numbers(self.g), {4, 7})
+        self.assertEqual(self.g.winners_per_round, 6)
+        rnd = self._pay_current()
+        with self.assertRaises(BusinessRuleError):
+            services.run_draw(rnd)
+        services.close_round_without_winner(rnd)  # closes as a payment-only round
+        rnd.refresh_from_db()
+        self.assertIn("Payment-only", rnd.draw_note)
+        for _ in range(2):
+            services.close_round_without_winner(self._pay_current())
+        rnd4 = self._pay_current()
+        self.assertEqual(rnd4.number, 4)
+        self.assertTrue(services.is_draw_round(rnd4))
+        self.assertTrue(services.run_draw(rnd4))
+        self.g.refresh_from_db()
+        self.assertEqual(services.draw_round_numbers(self.g), {4, 7})
+
+    def test_api_and_schedule_say_which_rounds_have_a_draw(self):
+        m = self.g.memberships.get(user=self.users[0])
+        rows = st.schedule_for(m)
+        self.assertEqual([r["round"] for r in rows if r["has_draw"]], [4, 7])
+        data = client_for(self.users[0]).get(f"/api/equb/memberships/{m.id}/").data
+        self.assertFalse(data["current_round"]["has_draw"])
+        fee = Decimal(self.g.service_fee_percent)
+        self.assertEqual(Decimal(data["group"]["payout_per_winner"]), (Decimal("7") * (1 - fee / 100)).quantize(Decimal("0.01")))
+
+
+class TermsDocumentTests(TestCase):
+    TEXT = ("# Vacation Equb Agreement\nPAYMENT TERMS\n1. Members pay **on time** every round.\n1.1 Late payers lose chance.\n"
+            "- Chapa only\n\nThe winner travels within a year.\n<script>x</script>")
+
+    def test_parse_blocks_and_html(self):
+        from . import terms
+        types = [b["type"] for b in terms.parse(self.TEXT)]
+        self.assertEqual(types, ["title", "heading", "clause", "clause", "bullet", "paragraph", "paragraph"])
+        doc = terms.document(self.TEXT)
+        self.assertEqual(doc["blocks"][3]["level"], 2)
+        self.assertGreater(doc["words"], 15)
+        html = terms.to_html(self.TEXT)
+        self.assertIn("<strong>on time</strong>", html)
+        self.assertNotIn("<script>", html)
+        self.assertEqual(terms.lines(self.TEXT)[2], "Members pay on time every round.")
+
+    def test_api_returns_the_document(self):
+        g = make_equb(name="Terms", contribution_amount=Decimal("10"), max_members=4, frequency_days=7,
+                       start_date=timezone.localdate(), rules_text=self.TEXT)
+        data = APIClient().get(f"/api/equb/groups/{g.slug}/").data
+        self.assertEqual(data["terms_document"]["blocks"][0]["text"], "Vacation Equb Agreement")
+        self.assertIn("Payment Terms", data["terms_document"]["headings"])
+
+
+class TermsRichStylesTests(TestCase):
+    def test_inline_and_block_styles(self):
+        from . import terms
+        text = ("### Travel\n!! Read **carefully**\n> quoted\n:: centred\n---\n[sign] Member\n  - sub **__both__**\n"
+                "a) first\nA. Smith agrees\nPay ==on time==, *never* ~~late~~ and 2*3*4 stays.")
+        blocks = terms.parse(text)
+        self.assertEqual([b["type"] for b in blocks],
+                         ["subheading", "notice", "quote", "center", "divider", "signature", "bullet", "letter",
+                          "paragraph", "paragraph"])
+        self.assertEqual(blocks[6]["level"], 2)
+        self.assertEqual(blocks[6]["spans"][1], {"t": "both", "b": True, "u": True})
+        styles = {k for s in blocks[-1]["spans"] for k in s if k != "t"}
+        self.assertEqual(styles, {"h", "i", "s"})
+        self.assertIn("2*3*4 stays", blocks[-1]["text"])
+        html = terms.to_html(text)
+        for tag in ("<mark>on time</mark>", "<em>never</em>", "<s>late</s>", "<u><strong>both</strong></u>", 'class="terms-notice"', "terms-sign"):
+            self.assertIn(tag, html)
+
+    def test_amharic_agreement(self):
+        from . import terms
+        text = "አንቀጽ 1፡ የሸሪአ መርሆች\n1.1 የሸሪአ ተገዢነት፡- ይህ ዕቁብ\nሀ. ከሪባ መራቅ፡- ማንኛውም\nለ) ከጋራር መራቅ"
+        blocks = terms.parse(text)
+        self.assertEqual([b["type"] for b in blocks], ["heading", "clause", "letter", "letter"])
+        self.assertEqual((blocks[2]["label"], blocks[3]["label"]), ("ሀ.", "ለ)"))
+        self.assertEqual(blocks[1]["spans"][0], {"t": "የሸሪአ ተገዢነት", "b": True})  # lead term in bold
+
+
+@plenty_of_money()
+class LiveDrawTests(TestCase):
+    def test_members_get_the_draw_to_replay(self):
+        users = [make_user(f"L{i}") for i in range(3)]
+        g = make_equb(name="Live", contribution_amount=Decimal("2"), frequency_days=3, max_members=6, duration_value=3,
+                      duration_unit="DAYS", start_date=timezone.localdate())
+        for u in users:
+            services.join_group(u, g)
+        rules = EqubSettings.load()
+        rules.min_paid_rounds_to_win = 0
+        rules.save()
+        services.start_group(g)
+        rnd = g.rounds.get(number=1)
+        rnd.contributions.update(status="PAID", paid_at=timezone.now())
+        self.assertEqual(client_for(users[0]).get("/api/equb/memberships/live-draws/").data["results"], [])
+        services.run_draw(rnd, count=1)
+        data = client_for(users[0]).get("/api/equb/memberships/live-draws/").data["results"]
+        self.assertEqual(len(data), 1)
+        d = data[0]
+        self.assertEqual((d["round"], len(d["entries"]), len(d["winners"])), (1, 3, 1))
+        self.assertEqual(sum(1 for e in d["entries"] if e["is_me"]), 1)
+        self.assertEqual(Decimal(d["winners"][0]["amount"]), Decimal("6.00"))  # the price per person
+        self.assertEqual(client_for(make_user("Outsider")).get("/api/equb/memberships/live-draws/").data["results"], [])

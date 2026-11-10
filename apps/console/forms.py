@@ -182,7 +182,7 @@ class EqubPackageForm(StyledMixin, forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["name"].widget.attrs.update(placeholder="e.g. Umrah, Hajj, Dubia")
-        self.fields["terms_content"].widget.attrs.update(rows=6)
+        self.fields["terms_content"].widget.attrs.update(rows=16, **{"data-terms-editor": "1"})
 
 
 class EqubForm(StyledMixin, forms.ModelForm):
@@ -191,14 +191,14 @@ class EqubForm(StyledMixin, forms.ModelForm):
     price_per_person = forms.CharField(
         label="Price per person", required=False, disabled=True,
         help_text="Contribution Amount × Duration Value – what each member (winners too) pays in total.")
-    sections = [("", "", ["equb_package", "name", "contribution_amount", "frequency_days", "duration_value",
+    sections = [("", "", ["equb_package", "name", "contribution_amount", "duration_value",
                           "duration_unit", "price_per_person", "max_members", "rounds_drawn", "service_fee_override",
                           "start_date", "end_date", "status", "draw_type", "rules_text"])]
     create_another = True
 
     class Meta:
         model = EqubGroup
-        fields = ["equb_package", "name", "contribution_amount", "frequency_days", "max_members", "rounds_drawn",
+        fields = ["equb_package", "name", "contribution_amount", "max_members", "rounds_drawn",
                   "service_fee_override", "duration_value", "duration_unit", "start_date", "end_date", "rules_text",
                   "status", "draw_type"]
         labels = {"equb_package": "Equb Package", "name": "Name", "contribution_amount": "Contribution Amount",
@@ -207,7 +207,10 @@ class EqubForm(StyledMixin, forms.ModelForm):
                   "duration_value": "Duration Value", "duration_unit": "Duration Unit", "start_date": "Equb Start Date",
                   "end_date": "Equb End Date", "rules_text": "Terms Content", "status": "Status", "draw_type": "Draw Type"}
         help_texts = {"rules_text": "", "frequency_days": "", "draw_type": "", "max_members": "", "equb_package": "",
-                      "rounds_drawn": "How many draws. Members ÷ rounds = winners per draw (12 members, 3 rounds → 4 winners each).",
+                      "rounds_drawn": "How many draws in total. Members ÷ draws = winners per draw (12 members, 3 draws → 4 winners each). "
+                                      "If members pay more times than this, the draws are spread out and the other rounds only collect money.",
+                      "duration_value": "How many rounds – members pay once per round (e.g. 7).",
+                      "duration_unit": "Length of one round: Days = pay every day, Weeks = every week, Months = every month.",
                       "end_date": "Filled in from the start date and duration. You can change it."}
 
     def __init__(self, *args, **kwargs):
@@ -223,24 +226,21 @@ class EqubForm(StyledMixin, forms.ModelForm):
         # Choosing a package fills in its frequency and terms (console.js, data-prefill).
         f["equb_package"].widget.attrs["data-prefill"] = json.dumps(
             {str(p.pk): {k: str(v) for k, v in p.group_defaults().items()} for p in pkgs})
-        for name in ("contribution_amount", "frequency_days", "duration_value"):
+        for name in ("contribution_amount", "duration_value"):
             f[name].required = True
-        f["frequency_days"].widget.attrs.update(min=1, max=365, step=1)
         default_fee = EqubSettings.load().service_fee_percent
         f["service_fee_override"].widget.attrs.update(min=0, max=20, step="0.01", placeholder=f"Default {default_fee:g}%")
         f["service_fee_override"].help_text = (f"Kept from each winner's payout. Leave empty to use the default "
                                                f"{default_fee:g}% from Equb rules.")
         f["max_members"].widget.attrs.update(min=2, max=10000, step=1)
-        f["rounds_drawn"].widget.attrs.update(min=1, max=10000, step=1, placeholder="Same as members")
+        f["rounds_drawn"].widget.attrs.update(min=1, max=10000, step=1, placeholder="One draw every round")
         f["contribution_amount"].widget.attrs.update(placeholder="e.g. 70000")
         f["price_per_person"].widget.attrs.update({"data-price": "1", "readonly": True})
         inst = self.instance
         amount = self.initial.get("contribution_amount") or (inst.contribution_amount if inst.pk else None)
         value = self.initial.get("duration_value") or (inst.duration_value if inst.pk else None)
         if inst.pk and inst.payment_rounds:
-            n = inst.payment_rounds
-            f["price_per_person"].initial = (f"{inst.price_per_person:,.2f} ETB".replace(".00 ETB", " ETB")
-                                             + f" · {n} payment{'s' if n > 1 else ''}")
+            f["price_per_person"].initial = f"{inst.price_per_person:,.2f} ETB".replace(".00 ETB", " ETB")
         elif amount and value:
             f["price_per_person"].initial = f"{Decimal(amount) * int(value):,.2f} ETB".replace(".00 ETB", " ETB")
         f["duration_value"].widget.attrs.update(min=1, step=1)
@@ -252,7 +252,7 @@ class EqubForm(StyledMixin, forms.ModelForm):
                                 ("CANCELLED", "Cancelled")] if running else
                                [("OPEN", "Not started – members can join, payments wait for the start"),
                                 ("ACTIVE", "Started – members join and pay"), ("DRAFT", "Draft – hidden from the app")])
-        f["rules_text"].widget.attrs.update(rows=4)
+        f["rules_text"].widget.attrs.update(rows=16, **{"data-terms-editor": "1"})
 
     def clean(self):
         d = super().clean()
@@ -736,3 +736,20 @@ class AppReleaseForm(StyledMixin, forms.ModelForm):
         if v and not all(p.isdigit() for p in v.split(".")):
             raise ValidationError("Use numbers like 1.2.0")
         return v
+
+
+class ChanceSettingsForm(StyledMixin, forms.ModelForm):
+    """Winning-chance rules (weighted automatic draw)."""
+
+    class Meta:
+        model = EqubSettings
+        fields = ["weighted_draw", "chance_on_time_percent", "chance_prepaid_percent", "chance_streak_percent",
+                  "chance_streak_cap_percent", "chance_late_percent", "chance_missed_percent", "chance_min_percent"]
+        labels = {"weighted_draw": "Use winning chance rules",
+                  "chance_on_time_percent": "Paid this round on time (+%)",
+                  "chance_prepaid_percent": "Paid in advance (+%)",
+                  "chance_streak_percent": "Each round on time in a row (+%)",
+                  "chance_streak_cap_percent": "Streak bonus at most (+%)",
+                  "chance_late_percent": "Paid this round late (−%)",
+                  "chance_missed_percent": "Each earlier round still unpaid (−%)",
+                  "chance_min_percent": "Lowest chance anyone can have (% of normal)"}

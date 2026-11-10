@@ -286,7 +286,10 @@ def schedule_for(m: EqubMembership, today: date | None = None) -> list[dict]:
     group = m.group
     contribution = Decimal(group.contribution_amount)
     contribs = {c.round_id: c for c in Contribution.objects.select_related("round", "payment_record").filter(membership=m)}
-    rounds = list(group.rounds.prefetch_related("payouts__membership__user").order_by("number"))
+    rounds = list(group.rounds.select_related("draw").prefetch_related("payouts__membership__user").order_by("number"))
+    from .services import draw_round_numbers  # services imports this module
+
+    draw_numbers = draw_round_numbers(group, rounds)
     credit = Decimal(m.prepaid_credit or 0)
     rows = []
     for r in rounds:
@@ -297,6 +300,7 @@ def schedule_for(m: EqubMembership, today: date | None = None) -> list[dict]:
             "round": r.number, "round_id": r.id, "due_date": r.due_date.isoformat(), "draw_date": r.draw_date.isoformat(),
             "round_status": r.status, "amount": str(contribution), "late_fee": "0.00", "paid_at": None,
             "receipt": None, "you_won": bool(m.won_round_id and m.won_round_id == r.id), "winners": winners,
+            "has_draw": draw_numbers is None or r.number in draw_numbers,
         }
         if c:
             fee = pending_fee(c, group, today)

@@ -60,6 +60,28 @@ class EqubSettings(models.Model):
                                              ("COLLECTED", "Only what was collected by draw day")],
                                     help_text="What each winner receives.")
     auto_start_when_full = models.BooleanField(default=True, help_text="Start an Equb as soon as all its places are taken.")
+    # --- winning chance (weighted draw) ---------------------------------------------
+    weighted_draw = models.BooleanField(
+        default=True, help_text="Give members who pay well a bigger chance in automatic draws. Off = everyone in "
+                                "the draw has exactly the same chance.")
+    chance_on_time_percent = models.PositiveSmallIntegerField(
+        default=50, validators=[MaxValueValidator(500)], help_text="Extra chance for paying this round on or before "
+                                                                     "its due date.")
+    chance_prepaid_percent = models.PositiveSmallIntegerField(
+        default=10, validators=[MaxValueValidator(500)], help_text="Extra chance for having paid future rounds in "
+                                                                     "advance.")
+    chance_streak_percent = models.PositiveSmallIntegerField(
+        default=5, validators=[MaxValueValidator(100)], help_text="Extra chance for every round paid on time in a row.")
+    chance_streak_cap_percent = models.PositiveSmallIntegerField(
+        default=25, validators=[MaxValueValidator(500)], help_text="Most the on-time streak can add.")
+    chance_late_percent = models.PositiveSmallIntegerField(
+        default=50, validators=[MaxValueValidator(100)], help_text="Less chance for paying this round after its due "
+                                                                     "date.")
+    chance_missed_percent = models.PositiveSmallIntegerField(
+        default=25, validators=[MaxValueValidator(100)], help_text="Less chance for every earlier round still unpaid.")
+    chance_min_percent = models.PositiveSmallIntegerField(
+        default=10, validators=[MinValueValidator(1), MaxValueValidator(100)],
+        help_text="Nobody in the draw goes below this share of a normal chance.")
     pending_payment_minutes = models.PositiveSmallIntegerField(
         default=3, validators=[MinValueValidator(1), MaxValueValidator(1440)],
         help_text="An app payment that is still unpaid after this many minutes is cancelled automatically "
@@ -132,6 +154,10 @@ class DurationUnit(models.TextChoices):
     DAYS = "DAYS", "Days"
     WEEKS = "WEEKS", "Weeks"
     MONTHS = "MONTHS", "Months"
+
+
+# One round lasts one Duration Unit: Days → members pay every day, Weeks → every week, Months → every month.
+ROUND_DAYS = {DurationUnit.DAYS: 1, DurationUnit.WEEKS: 7, DurationUnit.MONTHS: 30}
 
 
 def duration_end(start: date, value: int, unit: str) -> date:
@@ -323,6 +349,8 @@ class EqubGroup(TimeStampedModel):
     def save(self, *args, **kwargs):
         if self._state.adding and self.frequency in ("DAILY", "WEEKLY", "BIWEEKLY") and self.frequency_days == 30:
             self.frequency_days = FREQUENCY_DAYS[self.frequency]  # created with an old-style code ("WEEKLY")
+        if self.duration_value and self.duration_unit in ROUND_DAYS:
+            self.frequency_days = ROUND_DAYS[self.duration_unit]  # the round length follows the Duration Unit
         self.frequency = frequency_code(self.frequency_days)
         if self.duration_value and self.start_date and not self.end_date:
             self.end_date = duration_end(self.start_date, self.duration_value, self.duration_unit)
@@ -371,7 +399,8 @@ class EqubGroup(TimeStampedModel):
 
     @property
     def payout_per_winner(self) -> Decimal:
-        gross = self.pot_per_round / self.winners_per_round
+        # Each winner receives the full price per person (contribution × duration) minus the service fee.
+        gross = Decimal(self.price_per_person) if self.payment_rounds else self.pot_per_round / self.winners_per_round
         return (gross * (1 - self.service_fee_percent / 100)).quantize(Decimal("0.01"))
 
     @property
@@ -541,6 +570,8 @@ class EqubRound(TimeStampedModel):
     expected_amount = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     collected_amount = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     draw_note = models.CharField(max_length=255, blank=True, help_text="e.g. why the draw was postponed")
+    dates_fixed = models.BooleanField(default=False, help_text="Staff set this round's dates by hand – the automatic "
+                                                               "schedule leaves them alone.")
 
     class Meta:
         ordering = ["group", "number"]
@@ -658,7 +689,10 @@ class EqubDraw(TimeStampedModel):
     executed_at = models.DateTimeField(null=True, blank=True)
     executed_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
                                     related_name="+")
-    mode = models.CharField(max_length=8, choices=[("RANDOM", "Random draw"), ("SELECTED", "Selected by staff")],
+    weights = models.JSONField(default=list, blank=True,
+                               help_text="Chance weight of each eligible member (weighted draw), in pool order.")
+    mode = models.CharField(max_length=8, choices=[("RANDOM", "Random draw"), ("WEIGHTED", "Weighted random draw"),
+                                                   ("SELECTED", "Selected by staff")],
                             default="RANDOM")
     note = models.CharField(max_length=255, blank=True, help_text="Why staff chose these winners")
 

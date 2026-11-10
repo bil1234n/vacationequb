@@ -1,0 +1,79 @@
+{% extends "console/base.html" %}{% load console_tags %}
+{% block title %}{{ g.name }} · Rounds & draws{% endblock %}{% block heading %}Rounds &amp; draws{% endblock %}
+{% block crumbs %}<a href="{% url 'console:equbs' %}">Equb groups</a> / <a href="{% url 'console:equb' g.slug %}">{{ g.name }}</a>{% endblock %}
+{% block actions %}
+  {% if current %}<a class="btn ghost" href="{% url 'console:equb_round' g.slug current.number %}">Round {{ current.number }} eligibility</a>
+  {% if current.has_draw %}<a class="btn gold" href="{% url 'console:equb_draw_now' %}?round={{ current.pk }}">✦ Draw round {{ current.number }}</a>{% endif %}{% endif %}
+{% endblock %}
+{% block content %}
+<style>
+  .pl-hero{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:14px}
+  @media (max-width:1100px){.pl-hero{grid-template-columns:repeat(2,1fr)}}
+  .pl-hero .card{padding:16px 18px}.pl-hero small{display:block;color:var(--muted,#6B7C74);font-size:12px}.pl-hero b{font-size:20px}
+  .pl-now{display:flex;gap:18px;align-items:center;justify-content:space-between;flex-wrap:wrap;background:#0F382B;color:#fff;border-radius:18px;padding:20px 24px;margin-top:16px}
+  .pl-now h2{margin:0;color:#fff;font-size:20px}.pl-now p{margin:4px 0 0;opacity:.85}
+  .pl-now .btn{background:#E8C55B;color:#0F382B;border:0}
+  .pl-count{font-size:28px;font-weight:800;letter-spacing:-.5px}
+  table.plan td{vertical-align:middle}
+  table.plan input[type=date]{padding:7px 9px;border:1px solid var(--line,#D8E2DD);border-radius:9px;font:inherit}
+  table.plan tr.cur{background:#FFF9E8}
+  table.plan tr.done{color:var(--muted,#6B7C74)}
+  .pl-bar{height:6px;border-radius:4px;background:#E7EEEA;overflow:hidden;width:90px}.pl-bar i{display:block;height:100%;background:#2E7D5B}
+  .pl-foot{display:flex;gap:16px;align-items:center;justify-content:space-between;flex-wrap:wrap;margin-top:14px}
+  .pl-foot label{display:inline-flex;gap:8px;align-items:center;margin-right:16px}
+  .fixed{font-size:11px;color:#9A6B00;font-weight:700}
+</style>
+
+<div class="pl-hero">
+  <div class="card"><small>Schedule</small><b>{{ g.contribution_amount|money }}</b><small>{{ g.every }} · {{ g.grace_days }} grace day{{ g.grace_days|pluralize }}</small></div>
+  <div class="card"><small>Draws</small><b>{{ draws_done }} / {{ draws_total }}</b><small>{{ drawn }} of {{ rounds|length }} rounds closed · {{ g.get_draw_type_display }}</small></div>
+  <div class="card"><small>Starts → ends</small><b style="font-size:16px">{{ g.start_date|date:"d M Y" }}</b><small>to {{ g.end_date|date:"d M Y"|default:"—" }}</small></div>
+  <div class="card"><small>Money for winners</small><b>{% if funds %}{{ funds.available|money }}{% else %}—{% endif %}</b><small>{% if funds %}{{ funds.prize|money }} per winner · enough for {{ funds.max_winners }}{% else %}Starts when the Equb starts{% endif %}</small></div>
+  <div class="card"><small>Members</small><b>{{ g.members_count }} / {{ g.max_members }}</b><small>{{ g.winners_per_round }} winner{{ g.winners_per_round|pluralize }} per round by default</small></div>
+</div>
+
+{% if current %}
+<div class="pl-now">
+  <div>
+    <div class="small" style="opacity:.75;text-transform:uppercase;letter-spacing:.08em">Round being collected</div>
+    <h2>Round {{ current.number }} of {{ rounds|length }} · {% if current.has_draw %}draw on{% else %}payment-only round, closes{% endif %} {{ current.draw_date|date:"l d M Y" }}</h2>
+    <p>Due {{ current.due_date|date:"d M Y" }} · {{ current.paid_n }} of {{ current.slips_n }} paid · {{ in_draw }} of {{ waiting }} waiting members in the draw</p>
+  </div>
+  <div style="text-align:right">
+    <div class="pl-count" data-countdown="{{ current.draw_date|date:'Y-m-d' }}">{% if current.days > 0 %}in {{ current.days }} day{{ current.days|pluralize }}{% elif current.days == 0 %}Today{% else %}{{ current.days|neg }} day{{ current.days|neg|pluralize }} late{% endif %}</div>
+    <div style="display:flex;gap:8px;margin-top:8px;justify-content:flex-end;flex-wrap:wrap">
+      {% if current.has_draw %}<a class="btn" href="{% url 'console:equb_draw_now' %}?round={{ current.pk }}">✦ Draw now</a>{% endif %}
+      <form method="post" onsubmit="return confirm('Close round {{ current.number }} without a winner? The money stays in the Equb for the next draw.')">{% csrf_token %}<input type="hidden" name="action" value="skip"><button class="btn{% if current.has_draw %} ghost{% endif %}" {% if current.has_draw %}style="background:transparent;color:#fff;border:1px solid rgba(255,255,255,.4)"{% endif %}>{% if current.has_draw %}No winner this round{% else %}Close payment round{% endif %}</button></form>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<form method="post" class="card mt">{% csrf_token %}<input type="hidden" name="action" value="save">
+  <div class="card-h"><h2>Round dates</h2><span class="muted small">Change any round that hasn't been drawn. Members pay by the due date; the draw happens on the draw date.</span></div>
+  <div class="table-wrap"><table class="t plan">
+    <thead><tr><th>Round</th><th>Status</th><th>Due date</th><th>Draw date</th><th>When</th><th>Paid</th><th class="r">Collected</th><th>Winners</th><th></th></tr></thead>
+    <tbody>{% for r in rounds %}<tr class="{% if r == current %}cur{% elif not r.editable %}done{% endif %}">
+      <td class="strong num">{{ r.number }}{% if r.dates_fixed and r.editable %}<div class="fixed">set by hand</div>{% endif %}</td>
+      <td>{% if not r.has_draw and r.status != 'DRAWN' %}<span class="badge b-grey" title="Only collects payments – no draw">Payment only</span> {% endif %}{% if r.status == 'DRAWN' %}<span class="badge b-grey">{% if r.draw.executed_at %}Drawn{% else %}Closed{% endif %}</span>{% elif r.status == 'COLLECTING' %}<span class="badge b-gold">Collecting</span>{% else %}<span class="badge b-green">Upcoming</span>{% endif %}</td>
+      <td>{% if r.editable %}<input type="date" name="due_{{ r.number }}" value="{{ r.due_date|date:'Y-m-d' }}">{% else %}{{ r.due_date|date:"d M Y" }}{% endif %}</td>
+      <td>{% if r.editable %}<input type="date" name="draw_{{ r.number }}" value="{{ r.draw_date|date:'Y-m-d' }}" min="{{ today|date:'Y-m-d' }}">{% else %}{{ r.draw_date|date:"d M Y" }}{% endif %}</td>
+      <td class="small nowrap">{% if r.status == 'DRAWN' %}{% if r.draw.executed_at %}{{ r.draw.executed_at|date:"d M, H:i" }}{% else %}closed{% endif %}{% elif r.days > 0 %}in {{ r.days }} day{{ r.days|pluralize }}{% elif r.days == 0 %}<span class="badge b-red">Today</span>{% else %}<span class="badge b-red">{{ r.days|neg }}d late</span>{% endif %}</td>
+      <td>{% if r.slips_n %}<div style="display:flex;gap:6px;align-items:center"><div class="pl-bar"><i style="width:{% widthratio r.paid_n r.slips_n 100 %}%"></i></div><span class="small num">{{ r.paid_n }}/{{ r.slips_n }}</span></div>{% else %}<span class="muted small">—</span>{% endif %}</td>
+      <td class="r num">{{ r.collected_amount|money }}<div class="small muted">of {{ r.expected_amount|money }}</div></td>
+      <td class="small">{% for w in r.winners %}<div>🏆 {{ w }}</div>{% empty %}{% if r.draw_note and r.status == 'DRAWN' %}<span class="muted">{{ r.draw_note|truncatechars:48 }}</span>{% else %}<span class="muted">—</span>{% endif %}{% endfor %}</td>
+      <td class="r nowrap">{% if r.status != 'UPCOMING' %}<a class="btn ghost sm" href="{% url 'console:equb_round' g.slug r.number %}">{% if r.status == 'DRAWN' %}Record{% else %}Open{% endif %}</a>{% endif %}</td>
+    </tr>{% empty %}<tr><td colspan="9" class="empty">The rounds are created when the Equb starts.</td></tr>{% endfor %}</tbody>
+  </table></div>
+  {% if rounds %}
+  <div class="pl-foot">
+    <div><label><input type="checkbox" name="shift"> Move the later rounds by the same number of days</label>
+      <label><input type="checkbox" name="notify" checked> Tell members about the new dates</label></div>
+    <div style="display:flex;gap:8px">
+      <button class="btn ghost" type="submit" name="action" value="reset" formnovalidate onclick="return confirm('Put every round that is not drawn back on the regular schedule (start date + every {{ g.frequency_days }} days)?')">Reset to regular schedule</button>
+      <button class="btn" type="submit">Save dates</button>
+    </div>
+  </div>
+  {% endif %}
+</form>
+{% endblock %}

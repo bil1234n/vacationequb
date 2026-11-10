@@ -144,6 +144,40 @@ def round_count(group: EqubGroup, members: int | None = None) -> int:
     return max(draws, group.payment_rounds)
 
 
+def draw_round_numbers(group: EqubGroup, rounds: list | None = None) -> set[int] | None:
+    """
+    Which rounds have a draw when staff set "Rounds drawn" lower than the number of payments
+    (7 payments, 2 rounds drawn → draws in rounds 4 and 7; the other rounds only collect money).
+    The draws still to come are spread evenly over the rounds still to come, the last one always in the final round,
+    so the money builds up for the winners. ``None`` means every round has a draw.
+    """
+    if not group.rounds_drawn:
+        return None
+    rounds = list(group.rounds.select_related("draw").order_by("number")) if rounds is None else rounds
+    if not rounds or group.rounds_drawn >= len(rounds):
+        return None
+    done = {r.number for r in rounds if r.status == EqubRound.Status.DRAWN
+            and getattr(getattr(r, "draw", None), "executed_at", None)}
+    remaining = [r.number for r in rounds if r.status != EqubRound.Status.DRAWN]
+    left = max(group.rounds_drawn - len(done), 0)
+    if left >= len(remaining):
+        return done | set(remaining)
+
+    def spread(numbers: list[int], k: int) -> set[int]:
+        n = len(numbers)
+        return {numbers[n - 1 - (j * n) // k] for j in range(k)} if k else set()
+
+    # The plan over all rounds stays fixed; it is only spread again over the rounds left when a planned draw
+    # was closed without a winner (e.g. not enough money yet).
+    planned = spread([r.number for r in rounds], group.rounds_drawn) & set(remaining)
+    return done | (planned if len(planned) == left else spread(remaining, left))
+
+
+def is_draw_round(rnd: EqubRound) -> bool:
+    numbers = draw_round_numbers(rnd.group)
+    return numbers is None or rnd.number in numbers
+
+
 def _schedule_rounds(group: EqubGroup, wanted: int, members: int) -> None:
     """
     Make the round schedule match ``wanted`` rounds without ever duplicating a round number:
@@ -159,7 +193,7 @@ def _schedule_rounds(group: EqubGroup, wanted: int, members: int) -> None:
             "expected_amount": group.contribution_amount * members})
     (group.rounds.filter(number__gt=wanted, status=EqubRound.Status.UPCOMING)
      .exclude(contributions__isnull=False).delete())
-    for rnd in group.rounds.filter(status=EqubRound.Status.UPCOMING):
+    for rnd in group.rounds.filter(status=EqubRound.Status.UPCOMING, dates_fixed=False):
         due = due_date_for(group, rnd.number)
         rnd.due_date, rnd.draw_date = due, due + timedelta(days=group.grace_days)
         rnd.expected_amount = group.contribution_amount * members
@@ -530,6 +564,33 @@ def after_payment(m: EqubMembership):
 
 
 # --- draw -------------------------------------------------------------------
+def chance_factors(m: EqubMembership, slip, st, rnd: EqubRound, rules: EqubSettings, ahead: set,
+                   earlier_unpaid: int) -> tuple[int, list[dict]]:
+    """
+    A member's weight in the automatic draw (100 = a normal chance) and why:
+    paid this round on time / late, paid future rounds ahead, on-time streak, earlier rounds still unpaid.
+    """
+    if not rules.weighted_draw:
+        return 100, []
+    f = []
+    if slip is not None and slip.status == Contribution.Status.PAID and slip.paid_at:
+        if timezone.localtime(slip.paid_at).date() <= rnd.due_date:
+            f.append({"label": "Paid on time", "pct": rules.chance_on_time_percent})
+        else:
+            f.append({"label": "Paid late", "pct": -rules.chance_late_percent})
+    if m.id in ahead or (m.prepaid_credit or 0) > 0:
+        f.append({"label": "Paid in advance", "pct": rules.chance_prepaid_percent})
+    if st.on_time_streak > 1 and rules.chance_streak_percent:
+        bonus = min(st.on_time_streak * rules.chance_streak_percent, rules.chance_streak_cap_percent)
+        f.append({"label": f"{st.on_time_streak} on time in a row", "pct": bonus})
+    if earlier_unpaid and rules.chance_missed_percent:
+        f.append({"label": f"{earlier_unpaid} earlier round{'s' if earlier_unpaid > 1 else ''} unpaid",
+                  "pct": -min(earlier_unpaid * rules.chance_missed_percent, 100)})
+    f = [x for x in f if x["pct"]]
+    weight = max(rules.chance_min_percent, 100 + sum(x["pct"] for x in f))
+    return weight, f
+
+
 def draw_pool(rnd: EqubRound, rules: EqubSettings | None = None, today: date | None = None) -> dict:
     """
     Who is in this round's draw and who is not – with the reason for every exclusion.
@@ -545,6 +606,8 @@ def draw_pool(rnd: EqubRound, rules: EqubSettings | None = None, today: date | N
     earlier = {r["membership_id"]: r for r in Contribution.objects.filter(
         round__group=group, round__number__lt=rnd.number, status__in=Contribution.UNSETTLED
     ).values("membership_id").annotate(n=Count("id"), s=Sum("amount"))}
+    ahead = set(Contribution.objects.filter(round__group=group, round__number__gt=rnd.number,
+                                            status=Contribution.Status.PAID).values_list("membership_id", flat=True))
     entries = []
     for m in members:
         st = standings[m.id]
@@ -570,14 +633,20 @@ def draw_pool(rnd: EqubRound, rules: EqubSettings | None = None, today: date | N
             if st.paid_rounds < rules.min_paid_rounds_to_win and not unpaid_round:
                 reasons.append(f"Needs at least {rules.min_paid_rounds_to_win} paid round"
                                f"{'s' if rules.min_paid_rounds_to_win > 1 else ''}")
+        weight, factors = chance_factors(m, slips.get(m.id), st, rnd, rules, ahead,
+                                         earlier.get(m.id, {}).get("n", 0))
         entries.append({"membership_id": m.id, "position": m.position, "name": m.display_name, "team_id": m.team_id,
                         "phone": m.user.phone, "eligible": not reasons, "reasons": reasons,
-                        "standing": st.status, "standing_label": st.status_label, "_m": m})
+                        "standing": st.status, "standing_label": st.status_label, "_m": m,
+                        "weight": weight, "factors": factors})
     eligible = [e for e in entries if e["eligible"]]
     k = min(group.winners_per_round, len(eligible))
     odds = round(100 * k / len(eligible), 2) if eligible else 0.0
+    total_w = sum(e["weight"] for e in eligible) or 1
     for e in entries:
-        e["odds"] = odds if e["eligible"] else 0.0
+        # chance of being one of k winners ≈ k × weight share (capped at 100%)
+        e["odds"] = round(min(100.0, 100 * k * e["weight"] / total_w), 1) if e["eligible"] else 0.0
+        e["share"] = round(100 * e["weight"] / total_w, 1) if e["eligible"] else 0.0
     waiting = [e for e in entries if e["_m"].status == EqubMembership.Status.ACTIVE and not e["_m"].has_won]
     return {"round": rnd.number, "entries": entries, "eligible_count": len(eligible),
             "excluded_count": len(waiting) - len(eligible), "waiting_count": len(waiting),
@@ -592,24 +661,68 @@ def _snapshot(pool: dict, rules: EqubSettings) -> dict:
     return {
         "eligible_count": pool["eligible_count"], "excluded_count": pool["excluded_count"],
         "waiting_count": pool["waiting_count"], "odds_percent": pool["odds_percent"],
-        "eligible": [{"membership_id": e["membership_id"], "position": e["position"], "name": e["name"]}
+        "eligible": [{"membership_id": e["membership_id"], "position": e["position"], "name": e["name"],
+                      "weight": e["weight"], "factors": e["factors"]}
                      for e in pool["entries"] if e["eligible"]],
         "excluded": [{"membership_id": e["membership_id"], "position": e["position"], "name": e["name"],
                       "reasons": e["reasons"]} for e in pool["entries"]
                      if not e["eligible"] and e["_m"].status == EqubMembership.Status.ACTIVE and not e["_m"].has_won],
-        "rules": {"block_at": rules.block_at, "min_paid_rounds_to_win": rules.min_paid_rounds_to_win},
+        "rules": {"block_at": rules.block_at, "min_paid_rounds_to_win": rules.min_paid_rounds_to_win,
+                  "weighted_draw": rules.weighted_draw},
     }
+
+
+def prize_for(group: EqubGroup, rnd: EqubRound | None = None) -> Decimal:
+    """
+    What one winner receives before the service fee: the price per person (contribution × duration) – the full
+    trip value every member pays in. Equbs without a duration fall back to the round's pot split between winners.
+    """
+    if group.payment_rounds:
+        return Decimal(group.price_per_person).quantize(CENT)
+    rnd = rnd or group.rounds.filter(status=EqubRound.Status.COLLECTING).first()
+    if rnd is None:
+        return Decimal(group.contribution_amount).quantize(CENT)
+    if group.payout_basis == EqubGroup.PayoutBasis.FULL_POT:
+        return (Decimal(rnd.expected_amount) / group.winners_per_round).quantize(CENT)
+    return Decimal(rnd.collected_amount).quantize(CENT)
 
 
 def payout_for(group: EqubGroup, rnd: EqubRound, winners: int) -> tuple[Decimal, Decimal, Decimal]:
     """(gross, fee, net) per winner for this round."""
-    if group.payout_basis == EqubGroup.PayoutBasis.FULL_POT:
-        gross = Decimal(rnd.expected_amount) / group.winners_per_round
-    else:
-        gross = Decimal(rnd.collected_amount) / max(winners, 1)
-    gross = gross.quantize(CENT)
+    gross = prize_for(group, rnd)
     fee = (gross * Decimal(group.service_fee_percent) / 100).quantize(CENT)
     return gross, fee, gross - fee
+
+
+def equb_funds(group: EqubGroup, rnd: EqubRound | None = None) -> dict:
+    """
+    The money this Equb actually holds for payouts: every contribution members paid (plus credit paid ahead)
+    minus what earlier winners already received. Each winner needs one full prize, so this decides how many
+    people can win right now.
+    """
+    paid_in = (Contribution.objects.filter(round__group=group, status=Contribution.Status.PAID)
+               .aggregate(s=Sum("amount"))["s"] or Decimal("0"))
+    credit = (group.memberships.filter(status__in=EqubMembership.LIVE_STATUSES)
+              .aggregate(s=Sum("prepaid_credit"))["s"] or Decimal("0"))
+    paid_out = EqubPayout.objects.filter(round__group=group).aggregate(s=Sum("gross_amount"))["s"] or Decimal("0")
+    available = max(paid_in + credit - paid_out, Decimal("0")).quantize(CENT)
+    prize = prize_for(group, rnd)
+    fee = (prize * Decimal(group.service_fee_percent) / 100).quantize(CENT)
+    max_winners = int(available // prize) if prize > 0 else 0
+    return {"collected": (paid_in + credit).quantize(CENT), "paid_out": paid_out.quantize(CENT), "available": available,
+            "prize": prize, "fee": fee, "net": prize - fee, "max_winners": max_winners,
+            "short_for_one": max(prize - available, Decimal("0")).quantize(CENT)}
+
+
+def winners_wanted(pool_size: int, *, count: int | None = None, percent: Decimal | float | None = None,
+                   default: int = 1) -> int:
+    """How many winners staff asked for: a number, or a percentage of the people in the draw (at least 1)."""
+    if percent is not None and percent != "":
+        pct = max(Decimal("0"), min(Decimal(str(percent)), Decimal("100")))
+        return max(1, int((Decimal(pool_size) * pct / 100).to_integral_value(rounding="ROUND_HALF_UP"))) if pool_size else 0
+    if count:
+        return max(1, int(count))
+    return default
 
 
 def selectable_members(pool_info: dict, include_ineligible: bool = False) -> list[dict]:
@@ -621,12 +734,15 @@ def selectable_members(pool_info: dict, include_ineligible: bool = False) -> lis
 
 @transaction.atomic
 def run_draw(rnd: EqubRound, executed_by=None, *, winner_ids: list[int] | None = None, note: str = "",
-             include_ineligible: bool = False, team=None, exact: bool = True) -> list[EqubPayout]:
+             include_ineligible: bool = False, team=None, exact: bool = True, count: int | None = None,
+             percent=None) -> list[EqubPayout]:
     """
     Draw the round's winner(s).
 
-    Without ``winner_ids`` it is the provably-fair random draw. With ``winner_ids`` staff choose the winners
-    (Manual draw type): they must be in the draw, unless ``include_ineligible`` is set with a ``note`` saying why.
+    Without ``winner_ids`` it is the provably-fair random draw of ``count`` winners (or ``percent`` of the people
+    in the draw; default: the Equb's winners per round). With ``winner_ids`` staff choose the winners: they must
+    be in the draw, unless ``include_ineligible`` is set with a ``note`` saying why.
+    Every winner receives the full price per person, so the Equb must hold that much money for each winner.
     """
     rnd = EqubRound.objects.select_for_update().select_related("group").get(pk=rnd.pk)
     group = rnd.group
@@ -636,12 +752,25 @@ def run_draw(rnd: EqubRound, executed_by=None, *, winner_ids: list[int] | None =
         raise BusinessRuleError("Draws must run in round order.")
     if not group.memberships.filter(status=EqubMembership.Status.ACTIVE, has_won=False).exists():
         return close_payment_round(rnd)  # everyone has won: this round only collects the remaining payments
+    numbers = draw_round_numbers(group)
+    if numbers is not None and rnd.number not in numbers:
+        planned = ", ".join(str(n) for n in sorted(numbers)) or "none left"
+        raise BusinessRuleError(
+            f"Round {rnd.number} is a payment-only round: this Equb has {group.rounds_drawn} draw"
+            f"{'s' if group.rounds_drawn > 1 else ''} (rounds {planned}). Close it with “No winner this round”, "
+            "or change Rounds Drawn on the group.")
     draw = EqubDraw.objects.select_for_update().get(round=rnd)
     if draw.is_executed:
         raise BusinessRuleError("This round has already been drawn.")
 
     rules = EqubSettings.load()
     pool_info = draw_pool(rnd, rules)
+    funds = equb_funds(group, rnd)
+    if funds["max_winners"] < 1:
+        raise BusinessRuleError(
+            f"Not enough money for a winner yet: the Equb holds {money(funds['available'])} ETB and each winner "
+            f"receives {money(funds['prize'])} ETB (price per person). {money(funds['short_for_one'])} ETB more "
+            "must be collected first.")
     if winner_ids:
         note = (note or "").strip()
         if include_ineligible and not note:
@@ -660,6 +789,10 @@ def run_draw(rnd: EqubRound, executed_by=None, *, winner_ids: list[int] | None =
             k = len(chosen)
         if len(chosen) != k:
             raise BusinessRuleError(f"Choose exactly {k} winner{'s' if k > 1 else ''} for this round.")
+        if k > funds["max_winners"]:
+            raise BusinessRuleError(
+                f"The Equb holds {money(funds['available'])} ETB – enough for {funds['max_winners']} winner"
+                f"{'s' if funds['max_winners'] > 1 else ''} at {money(funds['prize'])} ETB each. Choose fewer people.")
         indices = [ids.index(i) for i in chosen]
         public_input = f"equb:{group.id}:round:{rnd.number}:selected"
         draw.mode, draw.note = "SELECTED", (note or (f"Whole Group Equb “{team.name}” chosen" if team else ""))[:255]
@@ -673,9 +806,20 @@ def run_draw(rnd: EqubRound, executed_by=None, *, winner_ids: list[int] | None =
         public_input = fairness.build_public_input(f"equb:{group.id}:round:{rnd.number}{scope}", ids)
         if team:
             draw.note = f"Drawn within the Group Equb “{team.name}”"[:255]
-        k = min(group.winners_per_round, len(pool))
-        indices = fairness.pick_many(draw.server_seed, public_input, len(pool), k)
-        draw.mode = "RANDOM"
+        wanted = winners_wanted(len(pool), count=count, percent=percent, default=group.winners_per_round)
+        k = min(wanted, len(pool), funds["max_winners"])
+        weights = [e["weight"] for e in pool_info["entries"] if e["eligible"] and (team is None or e["team_id"] == team.id)]
+        if rules.weighted_draw and len(set(weights)) > 1:
+            indices = fairness.pick_weighted(draw.server_seed, public_input, weights, k)
+            draw.weights = weights
+        else:
+            indices = fairness.pick_many(draw.server_seed, public_input, len(pool), k)
+            draw.weights = []
+        if k < wanted:
+            draw.note = ((draw.note + " · ") if draw.note else "") + \
+                f"{wanted} winners asked, {k} drawn ({'money for ' + str(funds['max_winners']) if k == funds['max_winners'] else 'people in the draw'})"
+            draw.note = draw.note[:255]
+        draw.mode = "WEIGHTED" if draw.weights else "RANDOM"
 
     draw.public_input = public_input
     draw.eligible_memberships = ids
@@ -707,7 +851,7 @@ def run_draw(rnd: EqubRound, executed_by=None, *, winner_ids: list[int] | None =
                if is_winner else f"Round {rnd.number} winner: {winner_names}",
                (f"Your {money(payout_amount)} ETB travel payout for {group.name} is ready. Redeem it on your trip."
                 if is_winner else (f"{len(pool)} members were in the draw. Verify it in the app – the next contribution is due soon."
-                                   if draw.mode == "RANDOM" else "The next contribution is due soon.")),
+                                   if draw.mode in ("RANDOM", "WEIGHTED") else "The next contribution is due soon.")),
                {"equb": group.slug, "round": rnd.number, "membership": m.id})
 
     _advance(group, rnd)
@@ -751,11 +895,38 @@ def reopen_if_short(group: EqubGroup) -> EqubGroup:
     return EqubGroup.objects.get(pk=group.pk)
 
 
-def close_payment_round(rnd: EqubRound) -> list:
-    """A round after everyone has won: nothing to draw, it is closed on its draw day and the next one opens."""
+@transaction.atomic
+def close_round_without_winner(rnd: EqubRound, staff=None, note: str = "") -> EqubRound:
+    """
+    Staff close a round with nobody winning – usually because the Equb doesn't hold one full prize yet.
+    The money stays in the Equb for the next draw and the next round opens.
+    """
+    rnd = EqubRound.objects.select_for_update().select_related("group").get(pk=rnd.pk)
+    group = rnd.group
+    if rnd.status != EqubRound.Status.COLLECTING or group.current_round != rnd.number:
+        raise BusinessRuleError("Only the round being collected now can be closed.")
+    if not is_draw_round(rnd) and not (note or "").strip():
+        return close_payment_round(rnd, "Payment-only round – no draw this round")
+    reason = (note or "").strip() or "Not enough money for a winner – kept for the next draw"
+    rnd.status = EqubRound.Status.DRAWN
+    rnd.draw_note = f"No winner this round: {reason}"[:255]
+    rnd.save(update_fields=["status", "draw_note", "updated_at"])
+    for m in _active_members(group).select_related("user"):
+        notify(m.user, Notification.Kind.EQUB_REMINDER, f"{group.name}: no winner in round {rnd.number}",
+               "The money collected stays in the Equb and goes to the next draw. Keep paying on time to be in it.",
+               {"equb": group.slug, "round": rnd.number, "membership": m.id})
+    _advance(group, rnd)
+    return rnd
+
+
+def close_payment_round(rnd: EqubRound, note: str = "") -> list:
+    """
+    A round with nothing to draw – everyone has already won, or it isn't one of the "Rounds drawn":
+    it is closed on its draw day, the money stays for the next draw and the next round opens.
+    """
     group = rnd.group
     rnd.status = EqubRound.Status.DRAWN
-    rnd.draw_note = "Payment-only round – every member has already won"
+    rnd.draw_note = (note or "Payment-only round – every member has already won")[:255]
     rnd.save(update_fields=["status", "draw_note", "updated_at"])
     _advance(group, rnd)
     return []
@@ -770,8 +941,12 @@ def verify_draw(rnd: EqubRound) -> dict:
                 "eligible_memberships": draw.eligible_memberships, "winner_indices": draw.winner_indices,
                 "eligible_count": len(draw.eligible_memberships), "executed_at": draw.executed_at.isoformat(),
                 "valid": None, "matches": None, "commitment_ok": None, "recomputed_indices": []}
-    result = fairness.verify(draw.server_seed, draw.seed_commitment, draw.public_input,
-                             len(draw.eligible_memberships), draw.winner_indices)
+    if draw.weights:
+        result = fairness.verify_weighted(draw.server_seed, draw.seed_commitment, draw.public_input, draw.weights,
+                                          draw.winner_indices)
+    else:
+        result = fairness.verify(draw.server_seed, draw.seed_commitment, draw.public_input,
+                                 len(draw.eligible_memberships), draw.winner_indices)
     snap = draw.pool_snapshot or {}
     return {
         "executed": True,
@@ -783,8 +958,11 @@ def verify_draw(rnd: EqubRound) -> dict:
         "eligible_count": len(draw.eligible_memberships),
         "excluded_count": snap.get("excluded_count"),
         "executed_at": draw.executed_at.isoformat(),
-        "mode": "RANDOM",
-        "algorithm": "index = HMAC_SHA256(server_seed, public_input#counter) mod n (rejection sampled)",
+        "mode": draw.mode,
+        "weights": draw.weights,
+        "algorithm": ("weighted: key_i = ln(u_i) / weight_i with u_i from HMAC_SHA256(server_seed, public_input#(10000000+i)); "
+                      "the largest keys win" if draw.weights else
+                      "index = HMAC_SHA256(server_seed, public_input#counter) mod n (rejection sampled)"),
         **result.as_dict(),
     }
 
@@ -927,3 +1105,44 @@ def expire_pending_payments(rules: EqubSettings | None = None, membership: EqubM
         except BusinessRuleError:
             pass
     return n
+
+
+def live_draws(user, hours: int = 48, limit: int = 10) -> list[dict]:
+    """
+    Recent draws with winners in the Equbs this user is in – the app plays them as a live spin-the-wheel reveal.
+    Members are shown by place number only (privacy); the app marks the user's own place as "You".
+    """
+    since = timezone.now() - timedelta(hours=hours)
+    places = {m.id: m for m in EqubMembership.objects.filter(user=user).exclude(status=EqubMembership.Status.LEFT)}
+    if not places:
+        return []
+    groups = {m.group_id for m in places.values()}
+    draws = (EqubDraw.objects.filter(round__group_id__in=groups, executed_at__gte=since)
+             .select_related("round__group").prefetch_related("round__payouts__membership").order_by("-executed_at")[:limit])
+    out = []
+    for d in draws:
+        payouts = list(d.round.payouts.all())
+        if not payouts:
+            continue  # closed without a winner – nothing to reveal
+        group = d.round.group
+        eligible = (d.pool_snapshot or {}).get("eligible") or []
+        entries = [{"membership_id": e["membership_id"], "position": e["position"],
+                    "is_me": e["membership_id"] in places, "weight": e.get("weight", 100)} for e in eligible]
+        known = {e["membership_id"] for e in entries}
+        for p in payouts:  # staff-selected winners may not be in the snapshot
+            if p.membership_id not in known:
+                entries.append({"membership_id": p.membership_id, "position": p.membership.position,
+                                "is_me": p.membership_id in places, "weight": 100})
+        total_w = sum(e["weight"] for e in entries) or 1
+        for e in entries:
+            e["share"] = round(100 * e["weight"] / total_w, 1)
+        out.append({
+            "id": d.id, "executed_at": d.executed_at.isoformat(), "mode": d.mode,
+            "group": {"name": group.name, "slug": group.slug}, "round": d.round.number,
+            "total_rounds": group.total_rounds, "entries": entries,
+            "winners": [{"membership_id": p.membership_id, "position": p.membership.position,
+                         "is_me": p.membership_id in places, "amount": str(p.gross_amount or p.amount)}
+                        for p in sorted(payouts, key=lambda p: p.membership.position)],
+            "seed_commitment": d.seed_commitment,
+        })
+    return out

@@ -83,3 +83,22 @@ def make_equb(**kw):
             setattr(s, k, v)
         s.save()
     return EqubGroup.objects.create(**kw)
+
+
+def plenty_of_money():
+    """
+    Patch for tests about who can win (pools, selection, groups) rather than about money: pretend the Equb holds
+    enough for 99 winners. The money rule itself is tested separately.
+    """
+    from decimal import Decimal
+    from unittest import mock
+
+    def fake(group, rnd=None):
+        from apps.equb.services import prize_for
+
+        prize = prize_for(group, rnd)
+        fee = (prize * Decimal(group.service_fee_percent) / 100).quantize(Decimal("0.01"))
+        return {"collected": prize * 99, "paid_out": Decimal("0"), "available": prize * 99, "prize": prize, "fee": fee,
+                "net": prize - fee, "max_winners": 99, "short_for_one": Decimal("0")}
+
+    return mock.patch("apps.equb.services.equb_funds", new=fake)

@@ -20,7 +20,8 @@ from .models import (Contribution, EqubGroup, EqubMembership, EqubPackage, EqubP
 from .serializers import (ContributionSerializer, DependentSerializer, GroupEqubCreateSerializer, InviteIdSerializer, InvitePhoneSerializer, RemoveMemberSerializer, EqubGroupDetailSerializer, EqubGroupListSerializer,
                           EqubGroupWriteSerializer, EqubPaymentSerializer, EqubPayoutSerializer, EqubRoundSerializer,
                           ExitRequestSerializer, JoinByCodeSerializer, MemberPaySerializer, MembershipSerializer,
-                          RedeemSerializer, ScheduledPaymentCreateSerializer, rules_summary, terms_lines)
+                          RedeemSerializer, ScheduledPaymentCreateSerializer, rules_summary, terms_document,
+                          terms_lines)
 
 
 class EqubPackageViewSet(viewsets.ReadOnlyModelViewSet):
@@ -235,6 +236,7 @@ def membership_detail(m: EqubMembership, request) -> dict:
                        "require_paid_to_draw": g.require_paid_to_draw, "payout_basis": g.payout_basis,
                        "package_name": g.equb_package.name if g.equb_package_id else None, "join_code": g.join_code,
                        "winners_per_round": g.winners_per_round, "terms_content": terms_lines(g),
+                       "terms_document": terms_document(g),
                        "price_per_person": str(g.price_per_person), "payment_rounds": g.payment_rounds})
     rejoin = operations.rejoin_info(request.user, g) if (not m.is_live and m.user_id == request.user.id) else None
     return {
@@ -261,6 +263,11 @@ class MembershipViewSet(viewsets.ReadOnlyModelViewSet):
             return EqubMembership.objects.none()
         return (EqubMembership.objects.filter(user=self.request.user).exclude(status=EqubMembership.Status.LEFT)
                 .select_related("group", "won_round").order_by("-created_at"))
+
+    @action(detail=False, methods=["get"], url_path="live-draws")
+    def live_draws(self, request):
+        """Recent draws with winners in my Equbs – shown in the app as a live spin-the-wheel reveal."""
+        return Response({"results": services.live_draws(request.user)})
 
     def list(self, request, *args, **kwargs):
         qs = self.filter_queryset(self.get_queryset())

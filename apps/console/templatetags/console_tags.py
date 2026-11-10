@@ -246,3 +246,13 @@ def modulo(value, arg):
         return int(value) % int(arg)
     except (TypeError, ValueError, ZeroDivisionError):
         return 0
+
+
+@register.filter
+def terms_html(text):
+    """Terms Content as a formatted agreement (titles, sections, numbered clauses, bullets, bold)."""
+    from django.utils.safestring import mark_safe
+
+    from apps.equb.terms import to_html
+
+    return mark_safe(to_html(text or ""))

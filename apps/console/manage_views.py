@@ -98,7 +98,7 @@ def equb_form(request, slug=None):
     obj = get_object_or_404(EqubGroup, slug=slug) if slug else None
     initial = None
     if not obj:
-        initial = {"status": "OPEN", "frequency_days": 30, "duration_value": 12, "duration_unit": "MONTHS",
+        initial = {"status": "OPEN", "duration_value": 12, "duration_unit": "MONTHS",
                    "draw_type": "MANUAL", "max_members": 12, "start_date": timezone.localdate() + timedelta(days=7)}
         pkg = EqubPackage.objects.filter(pk=request.GET.get("package") or 0, is_active=True).first()
         if pkg:  # "+ New group" from a package page

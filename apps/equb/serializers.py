@@ -4,6 +4,7 @@ from decimal import Decimal
 from rest_framework import serializers
 
 
+from . import terms as terms_mod
 from . import standing as standing_mod
 from .models import (Contribution, EqubGroup, EqubMembership, EqubPackage, EqubPayment, EqubPayout, EqubRound,
                      EqubSettings, GroupEqub)
@@ -16,11 +17,18 @@ class EqubRoundSerializer(serializers.ModelSerializer):
     paid_count = serializers.SerializerMethodField()
     members_count = serializers.SerializerMethodField()
     eligible_count = serializers.SerializerMethodField()
+    has_draw = serializers.SerializerMethodField()
 
     class Meta:
         model = EqubRound
         fields = ["id", "number", "due_date", "draw_date", "status", "expected_amount", "collected_amount",
-                  "paid_count", "members_count", "eligible_count", "seed_commitment", "draw_note", "winners"]
+                  "paid_count", "members_count", "eligible_count", "seed_commitment", "draw_note", "winners", "has_draw"]
+
+    def get_has_draw(self, obj) -> bool:
+        """False for payment-only rounds (when "Rounds drawn" is lower than the number of payments)."""
+        from .services import is_draw_round
+
+        return is_draw_round(obj)
 
     def get_winners(self, obj) -> list[dict]:
         from .services import public_name
@@ -105,7 +113,13 @@ class MyMembershipSerializer(serializers.ModelSerializer):
 
 
 def rules_summary(g: EqubGroup, rules: EqubSettings) -> list[str]:
-    out = [f"Pay {money(g.contribution_amount)} ETB {g.every} for {g.total_rounds} rounds – one draw each round."]
+    total = g.total_rounds
+    if g.rounds_drawn and g.rounds_drawn < total:
+        out = [f"Pay {money(g.contribution_amount)} ETB {g.every} for {total} rounds. There are {g.rounds_drawn} draw"
+               f"{'s' if g.rounds_drawn > 1 else ''}, spread over the rounds and ending in the last one – the other "
+               "rounds only collect payments."]
+    else:
+        out = [f"Pay {money(g.contribution_amount)} ETB {g.every} for {total} rounds – one draw each round."]
     if Decimal(g.late_fee):
         out.append(f"You have {g.grace_days} days' grace after each due date; after that a late fee of "
                    f"{money(g.late_fee)} ETB is added.")
@@ -121,18 +135,31 @@ def rules_summary(g: EqubGroup, rules: EqubSettings) -> list[str]:
         out.append("A provably-fair random draw runs automatically on each draw date – you can verify it in the app.")
     basis = ("guaranteed by vacation Travel" if g.payout_basis == EqubGroup.PayoutBasis.FULL_POT
              else "from what was collected by draw day")
-    out.append(f"Every member wins once. Each winner receives about {money(g.payout_per_winner)} ETB ({basis}), "
-               f"after a {g.service_fee_percent.normalize()}% service fee.")
+    if g.payment_rounds:
+        out.append(f"Each winner receives the price per person – {money(g.price_per_person)} ETB – "
+                   f"less the {g.service_fee_percent.normalize()}% service fee.")
+    else:
+        out.append(f"Every member wins once. Each winner receives about {money(g.payout_per_winner)} ETB ({basis}), "
+                   f"after a {g.service_fee_percent.normalize()}% service fee.")
     out.append(f"You can pay up to {rules.max_advance_rounds} rounds ahead; early payments are used automatically.")
     out.append("Before the Equb starts you can leave freely. Once it is running, leaving needs approval from vacation Travel.")
     out += [line.strip() for line in (g.rules_text or "").splitlines() if line.strip()]
     return out
 
 
+def terms_text(g: EqubGroup) -> str:
+    """The group's own Terms Content (falls back to its package's terms)."""
+    return g.rules_text or (g.equb_package.terms_content if g.equb_package_id else "") or ""
+
+
 def terms_lines(g: EqubGroup) -> list[str]:
-    """The group's own Terms Content (falls back to its package's terms), one line per term."""
-    text = g.rules_text or (g.equb_package.terms_content if g.equb_package_id else "") or ""
-    return [re.sub(r"^\s*(?:[•\-*]|\d{1,2}[.)])\s+", "", line).strip() for line in text.splitlines() if line.strip()]
+    """One plain line per term (older app versions)."""
+    return terms_mod.lines(terms_text(g))
+
+
+def terms_document(g: EqubGroup) -> dict:
+    """The agreement as formatted blocks for the app's reader."""
+    return terms_mod.document(terms_text(g))
 
 
 class EqubGroupDetailSerializer(EqubGroupListSerializer):
@@ -143,6 +170,7 @@ class EqubGroupDetailSerializer(EqubGroupListSerializer):
     organizer_name = serializers.CharField(source="organizer.full_name", read_only=True, default=None)
     rules_summary = serializers.SerializerMethodField()
     terms_content = serializers.SerializerMethodField()
+    terms_document = serializers.SerializerMethodField()
     rejoin = serializers.SerializerMethodField()
     join_code = serializers.SerializerMethodField()
     payout_basis_display = serializers.CharField(source="get_payout_basis_display", read_only=True)
@@ -150,7 +178,7 @@ class EqubGroupDetailSerializer(EqubGroupListSerializer):
     class Meta(EqubGroupListSerializer.Meta):
         fields = EqubGroupListSerializer.Meta.fields + [
             "service_fee_percent", "late_fee", "grace_days",
-            "require_paid_to_draw", "payout_basis", "payout_basis_display", "organizer_name", "rules_summary", "terms_content", "rejoin",
+            "require_paid_to_draw", "payout_basis", "payout_basis_display", "organizer_name", "rules_summary", "terms_content", "terms_document", "rejoin",
             "join_code", "current_round_detail", "my_membership", "my_current_contribution", "my_standing",
         ]
 
@@ -192,6 +220,9 @@ class EqubGroupDetailSerializer(EqubGroupListSerializer):
     def get_terms_content(self, obj) -> list[str]:
         return terms_lines(obj)
 
+    def get_terms_document(self, obj) -> dict:
+        return terms_document(obj)
+
     def get_rejoin(self, obj) -> dict | None:
         """Set when I was removed from (or left) this Equb after it started: I must ask to join again."""
         from .operations import rejoin_info
@@ -212,6 +243,7 @@ class EqubGroupWriteSerializer(serializers.ModelSerializer):
         model = EqubGroup
         fields = ["equb_package", "name", "contribution_amount", "frequency_days", "max_members", "rounds_drawn", "duration_value",
                   "duration_unit", "start_date", "end_date", "rules_text", "status", "draw_type"]
+        extra_kwargs = {"frequency_days": {"required": False}}  # set from the Duration Unit
 
 
 class ContributionSerializer(serializers.ModelSerializer):
