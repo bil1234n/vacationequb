@@ -48,8 +48,8 @@ class Command(BaseCommand):
         from apps.equb.models import EqubGroup
         from apps.equb.services import reopen_if_short
 
-        for g in EqubGroup.objects.filter(status=EqubGroup.Status.COMPLETED, duration_value__isnull=False):
-            reopen_if_short(g)
+        for g in EqubGroup.objects.filter(status=EqubGroup.Status.COMPLETED):
+            reopen_if_short(g)  # finished early, or while members were still waiting to win
         out["scheduled_payments_sent"] = send_scheduled_payments()
         out["pending_payments_cancelled"] = expire_pending_payments(rules)
         escalation = escalate_standings(rules)

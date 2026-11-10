@@ -22,7 +22,8 @@ class EqubRoundSerializer(serializers.ModelSerializer):
     class Meta:
         model = EqubRound
         fields = ["id", "number", "due_date", "draw_date", "status", "expected_amount", "collected_amount",
-                  "paid_count", "members_count", "eligible_count", "seed_commitment", "draw_note", "winners", "has_draw"]
+                  "paid_count", "members_count", "eligible_count", "seed_commitment", "draw_note", "winners", "has_draw",
+                  "extra_draw"]
 
     def get_has_draw(self, obj) -> bool:
         """False for payment-only rounds (when "Rounds drawn" is lower than the number of payments)."""

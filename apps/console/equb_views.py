@@ -89,6 +89,9 @@ def _pools():
 # --------------------------------------------------------------------------- pools
 @staff_required
 def equbs(request):
+    for done in EqubGroup.objects.filter(status=EqubGroup.Status.COMPLETED, memberships__status="ACTIVE",
+                                         memberships__has_won=False).distinct():
+        services.reopen_if_short(done)  # marked complete while members were still waiting to win
     status, package = request.GET.get("status", ""), request.GET.get("package", "")
     q = request.GET.get("q", "").strip()
     qs = EqubGroup.objects.select_related("equb_package").annotate(
@@ -140,6 +143,8 @@ def equbs(request):
 @staff_required
 def equb_detail(request, slug):
     g = get_object_or_404(EqubGroup.objects.select_related("equb_package", "organizer"), slug=slug)
+    if g.status == EqubGroup.Status.COMPLETED:
+        g = services.reopen_if_short(g)  # every member must win before an Equb is complete
     if request.method == "POST":
         action = request.POST.get("action")
         if action == "start":

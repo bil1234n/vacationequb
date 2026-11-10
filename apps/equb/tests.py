@@ -1049,3 +1049,63 @@ class LiveDrawTests(TestCase):
         self.assertEqual(sum(1 for e in d["entries"] if e["is_me"]), 1)
         self.assertEqual(Decimal(d["winners"][0]["amount"]), Decimal("6.00"))  # the price per person
         self.assertEqual(client_for(make_user("Outsider")).get("/api/equb/memberships/live-draws/").data["results"], [])
+
+
+@plenty_of_money()
+class EveryoneWinsTests(TestCase):
+    """An Equb is never complete while a member is still waiting to win – nobody loses their money."""
+
+    def setUp(self):
+        self.a, self.b = make_user("Ab"), make_user("Be")
+        self.g = make_equb(name="Everyone wins", contribution_amount=Decimal("1"), frequency_days=1, max_members=12,
+                           duration_value=2, duration_unit="DAYS", start_date=timezone.localdate())
+        for u in (self.a, self.b):
+            services.join_group(u, self.g)
+        rules = EqubSettings.load()
+        rules.min_paid_rounds_to_win = 0
+        rules.save()
+        services.start_group(self.g)
+
+    def _pay(self, rnd):
+        rnd.contributions.update(status="PAID", paid_at=timezone.now())
+
+    def test_extra_draw_round_until_everyone_has_won(self):
+        r1 = self.g.rounds.get(number=1)
+        self._pay(r1)
+        services.close_round_without_winner(r1, note="Not enough money")
+        r2 = self.g.rounds.get(number=2)
+        self._pay(r2)
+        services.run_draw(r2, count=1)
+        self.g.refresh_from_db()
+        self.assertEqual(self.g.status, "ACTIVE")  # one member still waiting
+        r3 = self.g.rounds.get(number=3)
+        self.assertTrue(r3.extra_draw)
+        self.assertEqual(r3.status, "COLLECTING")
+        self.assertEqual(r3.contributions.count(), 0)  # nobody is billed again
+        waiting = self.g.memberships.get(has_won=False)
+        entry = next(e for e in services.draw_pool(r3)["entries"] if e["membership_id"] == waiting.id)
+        self.assertTrue(entry["eligible"], entry["reasons"])  # paid in full → in the draw, no "round 3 not paid"
+        st_ = st.standing_for(waiting)
+        self.assertEqual((st_.paid_rounds, st_.total_rounds), (2, 2))  # 2/2, not 2/3
+        self.assertEqual(Decimal(st_.owes), 0)
+        row = st.schedule_for(waiting)[-1]
+        self.assertEqual((row["extra_draw"], row["amount"], row["has_draw"]), (True, "0.00", True))
+        self.assertTrue(st.schedule_for(waiting)[0]["has_draw"])  # round 1 keeps its draw label
+        self.assertFalse(services.payment_plan(waiting)["payable"])  # nothing more to pay
+        payouts = services.run_draw(r3)  # the last draw: everyone still waiting wins
+        self.assertEqual(len(payouts), 1)
+        self.g.refresh_from_db()
+        self.assertEqual(self.g.status, "COMPLETED")
+        self.assertFalse(self.g.memberships.filter(has_won=False).exists())
+
+    def test_wrongly_completed_equb_is_reopened(self):
+        r1, r2 = self.g.rounds.get(number=1), self.g.rounds.get(number=2)
+        self._pay(r1)
+        services.run_draw(r1, count=1)
+        self._pay(r2)
+        services.close_round_without_winner(r2, note="x")
+        EqubRound.objects.filter(group=self.g, number__gt=2).delete()
+        EqubGroup.objects.filter(pk=self.g.pk).update(status="COMPLETED", current_round=2)  # the old behaviour
+        g = services.reopen_if_short(EqubGroup.objects.get(pk=self.g.pk))
+        self.assertEqual(g.status, "ACTIVE")
+        self.assertTrue(g.rounds.get(number=3).extra_draw)

@@ -84,7 +84,7 @@
     <tbody>{% for r in rounds %}<tr>
       <td class="strong">R{{ r.number }}</td><td class="small">{{ r.due_date|date:"d M Y" }}</td>
       <td class="small">{{ r.draw_date|date:"d M Y" }}{% if r.draw_note %}<div class="muted">{{ r.draw_note }}</div>{% endif %}</td>
-      <td>{{ r.status|status_badge }}</td>
+      <td>{{ r.status|status_badge }}{% if r.extra_draw %}<div class="small muted" style="margin-top:4px" title="Added so every member wins – nobody is billed">Draw only · no payment</div>{% endif %}</td>
       <td><div class="bar"><i style="width:{{ r.progress }}%"></i></div><div class="small muted num">{{ r.paid }}/{{ r.slips }} paid · {{ r.collected_amount|compact }} / {{ r.expected_amount|compact }}</div></td>
       <td class="num">{% if r.drawn %}{{ r.eligible }}{% else %}—{% endif %}</td>
       <td class="small">{% for p in r.payouts.all %}🏆 {{ p.membership.user.full_name }}<div class="muted">{{ p.amount|money }}</div>{% empty %}—{% endfor %}</td>

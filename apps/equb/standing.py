@@ -150,7 +150,8 @@ def compute(m: EqubMembership, contributions: list[Contribution], rounds: list[E
     group = m.group
     contribution = Decimal(group.contribution_amount)
     contributions = sorted(contributions, key=lambda c: c.round.number)
-    total_rounds = len(rounds) if rounds else group.total_rounds
+    # draw-only rounds added at the end (so everyone wins) are not paid for
+    total_rounds = sum(1 for r in rounds if not getattr(r, "extra_draw", False)) if rounds else group.total_rounds
 
     settled = [c for c in contributions if c.status in Contribution.SETTLED]
     overdue = [c for c in contributions if _is_overdue(c, group, today)]
@@ -300,8 +301,12 @@ def schedule_for(m: EqubMembership, today: date | None = None) -> list[dict]:
             "round": r.number, "round_id": r.id, "due_date": r.due_date.isoformat(), "draw_date": r.draw_date.isoformat(),
             "round_status": r.status, "amount": str(contribution), "late_fee": "0.00", "paid_at": None,
             "receipt": None, "you_won": bool(m.won_round_id and m.won_round_id == r.id), "winners": winners,
-            "has_draw": draw_numbers is None or r.number in draw_numbers,
+            "has_draw": draw_numbers is None or r.number in draw_numbers, "extra_draw": r.extra_draw,
         }
+        if r.extra_draw:  # draw only – nobody pays for it
+            row.update(amount="0.00", state="not_billed")
+            rows.append(row)
+            continue
         if c:
             fee = pending_fee(c, group, today)
             row.update(amount=str(c.amount), late_fee=str(fee.quantize(Decimal("0.01"))),

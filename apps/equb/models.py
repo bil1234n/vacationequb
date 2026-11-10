@@ -570,6 +570,8 @@ class EqubRound(TimeStampedModel):
     expected_amount = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     collected_amount = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     draw_note = models.CharField(max_length=255, blank=True, help_text="e.g. why the draw was postponed")
+    extra_draw = models.BooleanField(
+        default=False, help_text="Added after the payment rounds so every member still waiting can win – nobody is billed.")
     dates_fixed = models.BooleanField(default=False, help_text="Staff set this round's dates by hand – the automatic "
                                                                "schedule leaves them alone.")
 

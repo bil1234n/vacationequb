@@ -154,12 +154,18 @@ def draw_round_numbers(group: EqubGroup, rounds: list | None = None) -> set[int]
     if not group.rounds_drawn:
         return None
     rounds = list(group.rounds.select_related("draw").order_by("number")) if rounds is None else rounds
+    extra = {r.number for r in rounds if r.extra_draw}
+    if extra:  # draw rounds added so everyone wins: the payment rounds keep their own plan, every extra round draws
+        plan = draw_round_numbers(group, [r for r in rounds if not r.extra_draw])
+        return None if plan is None else plan | extra
     if not rounds or group.rounds_drawn >= len(rounds):
         return None
     done = {r.number for r in rounds if r.status == EqubRound.Status.DRAWN
             and getattr(getattr(r, "draw", None), "executed_at", None)}
     remaining = [r.number for r in rounds if r.status != EqubRound.Status.DRAWN]
     left = max(group.rounds_drawn - len(done), 0)
+    if left == 0 and remaining and waiting_members(group).exists():
+        return done | set(remaining)  # past the plan but people still waiting: every round left has a draw
     if left >= len(remaining):
         return done | set(remaining)
 
@@ -191,7 +197,7 @@ def _schedule_rounds(group: EqubGroup, wanted: int, members: int) -> None:
         EqubRound.objects.get_or_create(group=group, number=n, defaults={
             "due_date": due, "draw_date": due + timedelta(days=group.grace_days),
             "expected_amount": group.contribution_amount * members})
-    (group.rounds.filter(number__gt=wanted, status=EqubRound.Status.UPCOMING)
+    (group.rounds.filter(number__gt=wanted, status=EqubRound.Status.UPCOMING, extra_draw=False)
      .exclude(contributions__isnull=False).delete())
     for rnd in group.rounds.filter(status=EqubRound.Status.UPCOMING, dates_fixed=False):
         due = due_date_for(group, rnd.number)
@@ -260,7 +266,7 @@ def _active_members(group):
 def open_round(rnd: EqubRound) -> EqubRound:
     """Create contribution slips, apply members' credit and publish the seed commitment for the draw."""
     group = rnd.group
-    members = list(_active_members(group))
+    members = [] if rnd.extra_draw else list(_active_members(group))  # an extra draw round bills nobody
     Contribution.objects.bulk_create(
         [Contribution(round=rnd, membership=m, amount=group.contribution_amount) for m in members],
         ignore_conflicts=True,
@@ -622,8 +628,8 @@ def draw_pool(rnd: EqubRound, rules: EqubSettings | None = None, today: date | N
                                + (f" – {m.draw_block_reason}" if m.draw_block_reason else ""))
             slip = slips.get(m.id)
             if group.require_paid_to_draw:
-                if not slip or slip.status not in Contribution.SETTLED:
-                    reasons.append(f"Round {rnd.number} contribution not paid")
+                if not rnd.extra_draw and (not slip or slip.status not in Contribution.SETTLED):
+                    reasons.append(f"Round {rnd.number} contribution not paid")  # extra draw rounds bill nobody
                 if m.id in earlier:
                     e = earlier[m.id]
                     reasons.append(f"Owes {e['n']} earlier round{'s' if e['n'] > 1 else ''} ({money(e['s'])} ETB)")
@@ -806,7 +812,8 @@ def run_draw(rnd: EqubRound, executed_by=None, *, winner_ids: list[int] | None =
         public_input = fairness.build_public_input(f"equb:{group.id}:round:{rnd.number}{scope}", ids)
         if team:
             draw.note = f"Drawn within the Group Equb “{team.name}”"[:255]
-        wanted = winners_wanted(len(pool), count=count, percent=percent, default=group.winners_per_round)
+        default = len(pool) if is_last_draw(rnd) else group.winners_per_round  # last draw: everyone still waiting
+        wanted = winners_wanted(len(pool), count=count, percent=percent, default=default)
         k = min(wanted, len(pool), funds["max_winners"])
         weights = [e["weight"] for e in pool_info["entries"] if e["eligible"] and (team is None or e["team_id"] == team.id)]
         if rules.weighted_draw and len(set(weights)) > 1:
@@ -858,11 +865,52 @@ def run_draw(rnd: EqubRound, executed_by=None, *, winner_ids: list[int] | None =
     return payouts
 
 
+def waiting_members(group: EqubGroup):
+    """Members who haven't won yet – an Equb only finishes when this is empty: every member wins once."""
+    return group.memberships.filter(status=EqubMembership.Status.ACTIVE, has_won=False)
+
+
+def is_last_draw(rnd: EqubRound) -> bool:
+    """No draw comes after this round (so it should give a win to everyone still waiting)."""
+    group = rnd.group
+    later = list(group.rounds.filter(number__gt=rnd.number).values_list("number", flat=True))
+    if not later:
+        return True
+    numbers = draw_round_numbers(group)
+    return numbers is not None and not any(n in numbers for n in later)
+
+
+def add_extra_draw_round(group: EqubGroup, after: EqubRound) -> EqubRound:
+    """
+    Every payment round is done but some members haven't won: add a draw-only round one period later
+    (nobody is billed – the money they paid is waiting for them) and open it.
+    """
+    start = max(after.draw_date, timezone.localdate())
+    day = start + timedelta(days=max(group.frequency_days, 1))
+    rnd = EqubRound.objects.create(group=group, number=after.number + 1, due_date=day, draw_date=day,
+                                   extra_draw=True, status=EqubRound.Status.UPCOMING)
+    open_round(rnd)
+    waiting = waiting_members(group).count()
+    for m in _active_members(group).select_related("user"):
+        notify(m.user, Notification.Kind.EQUB_REMINDER, f"{group.name}: draw round {rnd.number} added",
+               (f"Every payment round is done. {waiting} member{'s' if waiting != 1 else ''} still to win – the next "
+                f"draw is on {day:%d %b %Y}. No payment is due for this round." if not m.has_won else
+                f"{waiting} member{'s' if waiting != 1 else ''} still to win – the next draw is on {day:%d %b %Y}."),
+               {"equb": group.slug, "round": rnd.number, "membership": m.id})
+    return rnd
+
+
 def _advance(group: EqubGroup, rnd: EqubRound) -> None:
-    """Open the next round – winners keep paying until every payment round is done – or finish the Equb."""
+    """
+    Open the next round – winners keep paying until every payment round is done. After the last one the Equb
+    only finishes when every member has won; otherwise a draw-only round is added for those still waiting.
+    """
     nxt = group.rounds.filter(number=rnd.number + 1).first()
     if nxt:
         open_round(nxt)
+        return
+    if waiting_members(group).exists():
+        add_extra_draw_round(group, rnd)
         return
     EqubGroup.objects.filter(pk=group.pk).update(status=EqubGroup.Status.COMPLETED)
     for m in _active_members(group).filter(prepaid_credit__gt=0).select_related("user"):
@@ -871,11 +919,30 @@ def _advance(group: EqubGroup, rnd: EqubRound) -> None:
                "our team will contact you.", {"equb": group.slug, "membership": m.id})
 
 
+def reopen_unfinished(group: EqubGroup) -> EqubGroup:
+    """An Equb marked complete while members were still waiting to win is opened again with a draw round."""
+    if group.status != EqubGroup.Status.COMPLETED or not waiting_members(group).exists():
+        return group
+    with transaction.atomic():
+        group = EqubGroup.objects.select_for_update().get(pk=group.pk)
+        if group.status != EqubGroup.Status.COMPLETED:
+            return group
+        group.status = EqubGroup.Status.ACTIVE
+        group.save(update_fields=["status", "updated_at"])
+        last = group.rounds.order_by("-number").first()
+        if last is None or last.status != EqubRound.Status.DRAWN:
+            return group
+        add_extra_draw_round(group, last)
+    return EqubGroup.objects.get(pk=group.pk)
+
+
 def reopen_if_short(group: EqubGroup) -> EqubGroup:
     """
     An Equb that finished before every payment round was collected (it used to end once everyone had won)
-    is opened again so members can pay the rest of the price per person.
+    is opened again so members can pay the rest of the price per person – and one that finished while
+    members were still waiting to win gets a draw round.
     """
+    group = reopen_unfinished(group)
     if group.status != EqubGroup.Status.COMPLETED or not group.payment_rounds:
         return group
     wanted = round_count(group)
