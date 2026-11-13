@@ -44,7 +44,7 @@ def _attach_agency(txn: PaymentTransaction, target) -> None:
 def initiate_payment(*, user, target, amount: Decimal, purpose: str, provider: str | None = None,
                      payer_phone: str = "") -> PaymentTransaction:
     """Create a transaction for ``target`` and obtain a checkout URL from the provider."""
-    provider = provider or settings.VACATION["DEFAULT_PAYMENT_PROVIDER"]
+    provider = provider or settings.ETHIOVACATION["DEFAULT_PAYMENT_PROVIDER"]
     amount = Decimal(amount).quantize(Decimal("0.01"))
     if amount <= 0:
         raise BusinessRuleError("Payment amount must be positive.")
@@ -63,7 +63,7 @@ def initiate_payment(*, user, target, amount: Decimal, purpose: str, provider: s
         return existing
 
     txn = PaymentTransaction(
-        user=user, provider=provider, purpose=purpose, amount=amount, currency=settings.VACATION["CURRENCY"],
+        user=user, provider=provider, purpose=purpose, amount=amount, currency=settings.ETHIOVACATION["CURRENCY"],
         content_type=ct, object_id=target.pk, payer_phone=payer_phone or user.phone,
     )
     _attach_agency(txn, target)

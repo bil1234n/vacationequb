@@ -1,5 +1,5 @@
 """
-Vacation Equb — Django settings.
+EthioVacation — Django settings.
 
 All secrets and environment-specific values are read from environment variables
 (see ``.env.example``). PostgreSQL is the primary database.
@@ -71,7 +71,7 @@ INSTALLED_APPS = [
     "corsheaders",
     "django_filters",
     "drf_spectacular",
-    # vacation apps
+    # EthioVacation apps
     "apps.core",
     "apps.accounts",
     "apps.payments",
@@ -96,7 +96,7 @@ MIDDLEWARE = [
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
-ROOT_URLCONF = "vacation.urls"
+ROOT_URLCONF = "ethiovacation.urls"
 
 TEMPLATES = [
     {
@@ -113,8 +113,8 @@ TEMPLATES = [
     },
 ]
 
-WSGI_APPLICATION = "vacation.wsgi.application"
-ASGI_APPLICATION = "vacation.asgi.application"
+WSGI_APPLICATION = "ethiovacation.wsgi.application"
+ASGI_APPLICATION = "ethiovacation.asgi.application"
 
 # --- Database (PostgreSQL / Neon) ------------------------------------------
 if env("DATABASE_URL"):
@@ -191,7 +191,7 @@ REST_FRAMEWORK = {
         "rest_framework.throttling.UserRateThrottle",
     ),
     "DEFAULT_THROTTLE_RATES": {"anon": "60/min", "user": "240/min", "donations": "20/min"},
-    "EXCEPTION_HANDLER": "apps.core.exceptions.vacation_exception_handler",
+    "EXCEPTION_HANDLER": "apps.core.exceptions.ethiovacation_exception_handler",
 }
 
 SIMPLE_JWT = {
@@ -202,7 +202,7 @@ SIMPLE_JWT = {
 }
 
 SPECTACULAR_SETTINGS = {
-    "TITLE": "Vacation Equb API",
+    "TITLE": "EthioVacation API",
     "DESCRIPTION": "Flight & package booking, destination Equb pools, Sadaqah crowdfunding and free referral giveaways.",
     "VERSION": "1.0.0",
     "SERVE_INCLUDE_SCHEMA": False,
@@ -215,23 +215,23 @@ from corsheaders.defaults import default_headers  # noqa: E402
 CORS_ALLOW_HEADERS = (*default_headers, "ngrok-skip-browser-warning")
 
 # --- Business rules --------------------------------------------------------
-VACATION = {
+ETHIOVACATION = {
     "CURRENCY": "ETB",
     "SEAT_LOCK_MINUTES": int(env("SEAT_LOCK_MINUTES", 10)),
     "BOOKING_PAYMENT_WINDOW_MINUTES": int(env("BOOKING_PAYMENT_WINDOW_MINUTES", 30)),
     "MAX_SEATS_PER_LOCK": 9,
     "CROWDFUND_FEE_PERCENT": float(env("CROWDFUND_FEE_PERCENT", 5)),
     "COMPANY_PROFIT_PERCENT": float(env("COMPANY_PROFIT_PERCENT", 5)),
-    # Vacation Equb's cut of every travel-agency sale (taken from the agency's share).
+    # EthioVacation's cut of every travel-agency sale (taken from the agency's share).
     "AGENCY_COMMISSION_PERCENT": float(env("AGENCY_COMMISSION_PERCENT", 5)),
     "REFERRALS_PER_GIVEAWAY_ENTRY": int(env("REFERRALS_PER_GIVEAWAY_ENTRY", 10)),
     "TICKET_SIGNING_KEY": env("TICKET_SIGNING_KEY", SECRET_KEY),
     "DEFAULT_PAYMENT_PROVIDER": env("DEFAULT_PAYMENT_PROVIDER", "mock" if DEBUG else "telebirr"),
     "ENABLE_MOCK_GATEWAY": env_bool("ENABLE_MOCK_GATEWAY", DEBUG),
     "PUBLIC_BASE_URL": env("PUBLIC_BASE_URL", "http://localhost:8000"),
-    "APP_DEEP_LINK": env("APP_DEEP_LINK", "vacation://payment-result"),
+    "APP_DEEP_LINK": env("APP_DEEP_LINK", "ethiovacation://payment-result"),
     # Shown on /privacy/ and /account/delete/ – set SUPPORT_EMAIL to the inbox you really read.
-    "SUPPORT_EMAIL": env("SUPPORT_EMAIL", "support@vacationequb.com"),
+    "SUPPORT_EMAIL": env("SUPPORT_EMAIL", "support@ethiovacation.com"),
     "PRIVACY_UPDATED": env("PRIVACY_UPDATED", "6 November 2026"),
 }
 
@@ -256,7 +256,7 @@ PAYMENT_GATEWAYS = {
         "ENCRYPTION_KEY": env("CHAPA_ENCRYPTION_KEY", ""),
         # The "secret hash" typed in Chapa dashboard → Settings → Webhooks.
         "WEBHOOK_SECRET": env("CHAPA_WEBHOOK_SECRET", ""),
-        "CHECKOUT_TITLE": env("CHAPA_CHECKOUT_TITLE", "Vacation Equb"),
+        "CHECKOUT_TITLE": env("CHAPA_CHECKOUT_TITLE", "EthioVacation"),
         "TIMEOUT": int(env("CHAPA_TIMEOUT", 20)),
     },
 }

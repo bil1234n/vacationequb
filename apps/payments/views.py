@@ -116,7 +116,7 @@ class PaymentReturnView(APIView):
     def get(self, request, reference):
         txn = get_object_or_404(PaymentTransaction, reference=reference)
         txn = refresh_from_provider(txn)
-        deep_link = f"{settings.VACATION['APP_DEEP_LINK']}?reference={txn.reference}&status={txn.status}"
+        deep_link = f"{settings.ETHIOVACATION['APP_DEEP_LINK']}?reference={txn.reference}&status={txn.status}"
         return HttpResponseRedirect(deep_link) if request.query_params.get("redirect") else Response(
             {"reference": str(txn.reference), "status": txn.status, "deep_link": deep_link})
 
@@ -129,14 +129,14 @@ class MockCheckoutView(APIView):
     permission_classes = [permissions.AllowAny]
 
     def _txn(self, reference):
-        if not settings.VACATION["ENABLE_MOCK_GATEWAY"]:
+        if not settings.ETHIOVACATION["ENABLE_MOCK_GATEWAY"]:
             raise Http404
         return get_object_or_404(PaymentTransaction, reference=reference, provider="mock")
 
     def get(self, request, reference):
         txn = self._txn(reference)
         html = f"""<!doctype html><html><head><meta name=viewport content="width=device-width,initial-scale=1">
-<title>Vacation Equb Sandbox Pay</title><style>body{{font-family:system-ui;background:#fff;color:#0F382B;padding:24px}}
+<title>EthioVacation Sandbox Pay</title><style>body{{font-family:system-ui;background:#fff;color:#0F382B;padding:24px}}
 .card{{border:1px solid #d9e5df;border-radius:16px;padding:24px;max-width:420px;margin:auto}}
 button{{width:100%;padding:14px;border:0;border-radius:12px;font-size:16px;margin-top:12px;cursor:pointer}}
 .pay{{background:#0F382B;color:#fff}}.fail{{background:#f3f5f4;color:#0F382B}}</style></head>
@@ -156,4 +156,4 @@ button{{width:100%;padding:14px;border:0;border-radius:12px;font-size:16px;margi
         txn = apply_status(txn.pk, result, payload=payload)
         if request.content_type and "json" in request.content_type:
             return Response(PaymentTransactionSerializer(txn).data)
-        return HttpResponseRedirect(f"{settings.VACATION['APP_DEEP_LINK']}?reference={txn.reference}&status={txn.status}")
+        return HttpResponseRedirect(f"{settings.ETHIOVACATION['APP_DEEP_LINK']}?reference={txn.reference}&status={txn.status}")

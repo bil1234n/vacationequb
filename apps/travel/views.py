@@ -206,7 +206,7 @@ class BookingViewSet(mixins.CreateModelMixin, mixins.ListModelMixin, mixins.Retr
         if booking.status != Booking.Status.CONFIRMED:
             raise BusinessRuleError("The itinerary is available once the booking is confirmed.")
         resp = HttpResponse(render_itinerary_pdf(booking), content_type="application/pdf")
-        resp["Content-Disposition"] = f'attachment; filename="VacationEqub-{booking.reference}.pdf"'
+        resp["Content-Disposition"] = f'attachment; filename="EthioVacation-{booking.reference}.pdf"'
         return resp
 
     @action(detail=True, methods=["get"], url_path=r"qr/(?P<ticket_number>\d+)")

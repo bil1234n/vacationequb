@@ -23,7 +23,7 @@ class PaymentTransaction(TimeStampedModel):
     class Purpose(models.TextChoices):
         BOOKING = "BOOKING", "Flight / package booking"
         EQUB_CONTRIBUTION = "EQUB_CONTRIBUTION", "Equb contribution"
-        DONATION = "DONATION", "Crowdfunding donation (Sadaqah / Hibah)"
+        DONATION = "DONATION", "Crowdfunding donation"
         MICRO_DONATION = "MICRO_DONATION", "Old lucky-draw entry (retired)"
 
     class Status(models.TextChoices):
@@ -64,11 +64,11 @@ class PaymentTransaction(TimeStampedModel):
                                     related_name="+", help_text="Staff member who recorded an office payment")
     refunded_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
 
-    # Travel agency sales: the agency keeps the rest, Vacation Equb keeps ``platform_fee``.
+    # Travel agency sales: the agency keeps the rest, EthioVacation keeps ``platform_fee``.
     agency = models.ForeignKey("agencies.Agency", null=True, blank=True, on_delete=models.PROTECT,
                                related_name="payments", help_text="Travel agency this sale belongs to")
     platform_fee = models.DecimalField(max_digits=12, decimal_places=2, default=0,
-                                       help_text="Vacation Equb's commission on an agency sale")
+                                       help_text="EthioVacation's commission on an agency sale")
     split_settled = models.BooleanField(default=False,
                                         help_text="Chapa paid the agency's share directly (split payment)")
 

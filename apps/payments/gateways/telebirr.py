@@ -151,7 +151,7 @@ class TelebirrGateway(PaymentGateway):
             "merch_code": self.config["MERCHANT_CODE"],
             "merch_order_id": txn.reference.hex,
             "trade_type": "Checkout",
-            "title": f"Vacation Equb {txn.get_purpose_display()}"[:64],
+            "title": f"EthioVacation {txn.get_purpose_display()}"[:64],
             "total_amount": f"{txn.amount:.2f}",
             "trans_currency": txn.currency,
             "timeout_express": "120m",

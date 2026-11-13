@@ -23,7 +23,7 @@ log = logging.getLogger(__name__)
 
 
 def _payment_window():
-    return timedelta(minutes=settings.VACATION["BOOKING_PAYMENT_WINDOW_MINUTES"])
+    return timedelta(minutes=settings.ETHIOVACATION["BOOKING_PAYMENT_WINDOW_MINUTES"])
 
 
 def log_event(booking: Booking, kind: str, message: str, by=None) -> BookingEvent:
@@ -59,13 +59,13 @@ def cancellation_policy(booking: Booking, now=None) -> dict:
     if departs and departs <= now:
         return deny("started", "This trip has already started.")
     if booking.booking_type == Booking.Type.PACKAGE:
-        return deny("package", "To change or cancel a package, please contact Vacation Equb – deposits follow the "
+        return deny("package", "To change or cancel a package, please contact EthioVacation – deposits follow the "
                                "package terms.")
     fare = booking.fare_class
     if not fare or not fare.refundable:
-        return deny("non_refundable", "This fare is non-refundable. Contact Vacation Equb if you need to change it.")
+        return deny("non_refundable", "This fare is non-refundable. Contact EthioVacation if you need to change it.")
     if departs and departs - now < SELF_CANCEL_CUTOFF:
-        return deny("cutoff", "Online cancellation closes 3 hours before departure. Please contact Vacation Equb.")
+        return deny("cutoff", "Online cancellation closes 3 hours before departure. Please contact EthioVacation.")
     travellers = booking.passengers.exclude(passenger_type=Passenger.Type.INFANT).count()
     fee = min(fare.change_fee * travellers, booking.total_amount)
     out.update(can_cancel=True, refundable=True, fee=str(fee), refund_estimate=str(booking.total_amount - fee),

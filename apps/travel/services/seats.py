@@ -21,15 +21,15 @@ from ..models import Seat
 
 
 def lock_minutes():
-    return settings.VACATION["SEAT_LOCK_MINUTES"]
+    return settings.ETHIOVACATION["SEAT_LOCK_MINUTES"]
 
 
 @transaction.atomic
 def lock_seats(user, flight, seat_ids: list[int], minutes: int | None = None) -> list[Seat]:
     if not seat_ids:
         raise BusinessRuleError("Select at least one seat.")
-    if len(seat_ids) > settings.VACATION["MAX_SEATS_PER_LOCK"]:
-        raise BusinessRuleError(f"You can hold at most {settings.VACATION['MAX_SEATS_PER_LOCK']} seats.")
+    if len(seat_ids) > settings.ETHIOVACATION["MAX_SEATS_PER_LOCK"]:
+        raise BusinessRuleError(f"You can hold at most {settings.ETHIOVACATION['MAX_SEATS_PER_LOCK']} seats.")
     if not flight.is_bookable:
         raise BusinessRuleError("This flight is no longer open for booking.")
 

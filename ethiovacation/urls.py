@@ -7,8 +7,8 @@ from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 from apps.accounts.web import delete_account, privacy_policy
 from apps.core.views import AppVersionView, BannerListView, DashboardView, HealthView, LandingView
 
-admin.site.site_header = "Vacation Equb Administration"
-admin.site.site_title = "Vacation Equb Admin"
+admin.site.site_header = "EthioVacation Administration"
+admin.site.site_title = "EthioVacation Admin"
 
 urlpatterns = [
     path("", LandingView.as_view(), name="landing"),
@@ -22,6 +22,7 @@ urlpatterns = [
     path("api/home/banners/", BannerListView.as_view(), name="banners"),
     path("api/app/version/", AppVersionView.as_view(), name="app-version"),
     path("api/auth/", include("apps.accounts.urls")),
+    path("api/agency/", include("apps.agencies.api_urls")),
     path("api/travel/", include("apps.travel.urls")),
     path("api/equb/", include("apps.equb.urls")),
     path("api/community/", include("apps.luckydraw.urls")),
