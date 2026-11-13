@@ -20,7 +20,7 @@ class DonationThrottle(UserRateThrottle):
 
 
 class CrowdfundingViewSet(viewsets.ReadOnlyModelViewSet):
-    """Crowdfunding Hub (Sadaqah / Hibah). The gift goes 100% to the cause; the platform fee is added on top."""
+    """Crowdfunding Hub (donations). The gift goes 100% to the cause; the platform fee is added on top."""
 
     serializer_class = CrowdfundingCampaignSerializer
     permission_classes = [IsStaffOrReadOnly]

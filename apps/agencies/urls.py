@@ -14,6 +14,7 @@ urlpatterns = [
     path("customers/<int:pk>/family/<int:member>/", views.family_form, name="family_edit"),
     path("equb/", views.equbs, name="equbs"),
     path("equb/<slug:slug>/enrol/", views.equb_enrol, name="equb_enrol"),
+    path("equb/places/<int:pk>/", views.place, name="place"),
     path("book/", views.book, name="book"),
     path("book/flight/<int:fare_id>/", views.book_flight, name="book_flight"),
     path("book/package/<int:pk>/", views.book_package, name="book_package"),

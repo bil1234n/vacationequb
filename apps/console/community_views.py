@@ -1,4 +1,4 @@
-"""Community Finance & Impact: Crowdfunding Campaigns (Sadaqah / Hibah) and Community Giveaways (free, sponsored)."""
+"""Community Finance & Impact: Crowdfunding Campaigns (donations) and Community Giveaways (free, sponsored)."""
 from __future__ import annotations
 
 from datetime import timedelta
@@ -43,8 +43,8 @@ def community(request):
         {"label": "Gifts to campaigns", "data": series(paid, "paid_at", Sum("amount"), days), "color": "#0F382B"},
         {"label": "Platform fees", "data": series(paid, "paid_at", Sum("fee_amount"), days), "color": "#C9A227"}],
         "stacked": True},
-        "kinds": {"type": "doughnut", "money": True, "labels": ["Sadaqah", "Hibah"], "datasets": [
-            {"label": "Given", "data": [float(paid.filter(kind=k).aggregate(s=Sum("amount"))["s"] or 0) for k in ("SADAQAH", "HIBAH")]}]}}
+        "kinds": {"type": "doughnut", "money": True, "labels": ["Donations"], "datasets": [
+            {"label": "Given", "data": [float(paid.aggregate(s=Sum("amount"))["s"] or 0)]}]}}
     kpi = {"raised": totals["raised"] or 0, "fees": totals["fees"] or 0, "disbursed": totals["disbursed"] or 0,
            "to_pay": (totals["raised"] or 0) - (totals["disbursed"] or 0),
            "donors": paid.values("user").distinct().count(), "gifts": paid.count(),
@@ -91,7 +91,7 @@ def campaign_detail(request, slug):
         "nav": "community", "c": c, "charts": charts, "dform": dform,
         "donations": c.donations.select_related("user").exclude(status="FAILED").order_by("-created_at")[:40],
         "disbursements": c.disbursements.select_related("recorded_by"),
-        "kinds": {k: paid.filter(kind=k).aggregate(s=Sum("amount"), n=Count("id")) for k in ("SADAQAH", "HIBAH")},
+        "kinds": {"DONATION": paid.aggregate(s=Sum("amount"), n=Count("id"))},
         "avg": (paid.aggregate(s=Sum("amount"))["s"] or 0) / max(paid.count(), 1),
     })
 

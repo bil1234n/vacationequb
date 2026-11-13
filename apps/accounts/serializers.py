@@ -4,20 +4,32 @@ from rest_framework.exceptions import APIException
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from .models import User, normalize_phone, validate_phone
+from .models import User, normalize_phone, validate_phone, validate_pin
 
 
 class UserSerializer(serializers.ModelSerializer):
     referrals_count = serializers.IntegerField(source="referrals.count", read_only=True)
+    agency = serializers.SerializerMethodField()
+
+    def get_agency(self, user) -> dict | None:
+        """Travel-agency staff get their own app (agency dashboard) instead of the customer app."""
+        from apps.agencies.services import staff_for
+
+        st = staff_for(user)
+        if not st:
+            return None
+        return {"id": st.agency_id, "name": st.agency.name, "status": st.agency.status, "role": st.role,
+                "role_display": st.get_role_display(), "can_manage": st.can_manage,
+                "commission_percent": str(st.agency.commission_percent)}
 
     class Meta:
         model = User
         fields = [
             "id", "phone", "email", "full_name", "preferred_language", "national_id",
             "passport_number", "passport_expiry", "date_of_birth", "referral_code",
-            "referrals_count", "is_phone_verified", "date_joined",
+            "referrals_count", "is_phone_verified", "date_joined", "pin_set", "agency",
         ]
-        read_only_fields = ["phone", "referral_code", "is_phone_verified", "date_joined"]
+        read_only_fields = ["phone", "referral_code", "is_phone_verified", "date_joined", "pin_set"]
 
 
 class RegisterSerializer(serializers.ModelSerializer):
@@ -38,7 +50,10 @@ class RegisterSerializer(serializers.ModelSerializer):
         return value
 
     def validate_password(self, value):
-        password_validation.validate_password(value)
+        try:
+            validate_pin(value)
+        except Exception as exc:  # Django ValidationError → DRF error
+            raise serializers.ValidationError(exc.messages[0]) from exc
         return value
 
     def validate_referral_code(self, value):
@@ -54,7 +69,7 @@ class RegisterSerializer(serializers.ModelSerializer):
 
         referrer = validated_data.pop("referral_code", None)
         password = validated_data.pop("password")
-        user = User.objects.create_user(password=password, referred_by=referrer, **validated_data)
+        user = User.objects.create_user(password=password, referred_by=referrer, pin_set=True, **validated_data)
         if referrer:
             on_referral_signup(referrer=referrer, new_user=user)
         return user
@@ -69,7 +84,7 @@ class AccountDeletionPending(APIException):
 
     status_code = status.HTTP_403_FORBIDDEN
     default_detail = ("This account is suspended because you asked us to delete it. Our team is reviewing the request. "
-                      "Contact Vacation Equb support if you want to keep your account.")
+                      "Contact EthioVacation support if you want to keep your account.")
     default_code = "deletion_pending"
 
 
@@ -84,7 +99,24 @@ class PhoneTokenObtainPairSerializer(TokenObtainPairSerializer):
             raise AccountDeletionPending()
         data = super().validate(attrs)
         data["user"] = UserSerializer(self.user).data
+        data["needs_pin"] = not self.user.pin_set
         return data
+
+
+class CheckPhoneSerializer(serializers.Serializer):
+    phone = serializers.CharField(max_length=20)
+
+
+class SetPinSerializer(serializers.Serializer):
+    current = serializers.CharField(max_length=128, trim_whitespace=False)
+    pin = serializers.CharField(max_length=6, min_length=6)
+
+    def validate_pin(self, value):
+        try:
+            validate_pin(value)
+        except Exception as exc:
+            raise serializers.ValidationError(exc.messages[0]) from exc
+        return value
 
 
 class PushTokenSerializer(serializers.Serializer):

@@ -14,7 +14,7 @@
 <div class="grid g-4">
   <div class="card kpi dark"><div class="label">Collected</div><div class="value">{{ d.total|compact }} <small style="font-size:14px">ETB</small></div><div class="sub">{{ d.count }} payment{{ d.count|pluralize }} from {{ d.payers }} member{{ d.payers|pluralize }}</div></div>
   <div class="card kpi"><div class="label">Online / office</div><div class="value">{{ d.online|compact }} <small style="font-size:14px">/ {{ d.office|compact }}</small></div><div class="sub">app gateways vs cash &amp; bank at the office</div></div>
-  <div class="card kpi gold"><div class="label">Equb revenue</div><div class="value">{{ d.revenue|compact }} <small style="font-size:14px">ETB</small></div><div class="sub">{{ d.service_fees|money }} service fees + {{ d.late_fees|money }} late fees</div></div>
+  <div class="card kpi gold"><div class="label">Equb revenue</div><div class="value">{{ d.revenue|compact }} <small style="font-size:14px">ETB</small></div><div class="sub">{{ d.service_fees|money }} service fees (no late fees)</div></div>
   <div class="card kpi"><div class="label">Payouts</div><div class="value">{{ d.payouts_count }}</div><div class="sub">{{ d.payouts_total|money }} to winners</div></div>
 </div>
 

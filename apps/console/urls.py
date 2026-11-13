@@ -3,6 +3,7 @@ from django.urls import path
 from . import agency_views as ag
 from . import community_views as cv
 from . import equb_views as e
+from . import kyc_views
 from . import manage_views as m
 from . import travel_views as t
 from . import views
@@ -71,6 +72,9 @@ urlpatterns = [
     path("agencies/<int:pk>/", ag.agency_detail, name="agency"),
     path("agencies/<int:pk>/edit/", ag.agency_form, name="agency_edit"),
     path("customers/", views.users, name="users"),
+    path("equb/eligibility-forms/", kyc_views.kyc_list, name="kyc_list"),
+    path("equb/eligibility-forms/<int:pk>/", kyc_views.kyc_detail, name="kyc_detail"),
+    path("equb/eligibility-forms/<int:pk>/<str:which>.img", kyc_views.kyc_image, name="kyc_image"),
     path("customers/deletion-requests/", views.deletion_requests, name="deletion_requests"),
     path("customers/<int:pk>/deletion/", views.deletion_decide, name="deletion_decide"),
     path("customers/<int:pk>/", views.user_detail, name="user"),

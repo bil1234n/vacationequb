@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}Console{% endblock %} · Vacation Equb</title>
+  <title>{% block title %}Console{% endblock %} · EthioVacation</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{% static 'console/console.css' %}">
@@ -12,7 +12,7 @@
 <body>
 <div class="shell">
   <aside class="sidebar">
-    <div class="brand"><div class="brand-mark">VE</div><div><b>Vacation Equb</b><small>Staff console</small></div></div>
+    <div class="brand"><div class="brand-mark">EV</div><div><b>EthioVacation</b><small>Staff console</small></div></div>
     <nav class="nav">
       <div class="nav-label">Overview</div>
       <a href="{% url 'console:dashboard' %}" class="{% if nav == 'dashboard' %}active{% endif %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>Dashboard</a>
@@ -29,6 +29,7 @@
       <a href="{% url 'console:equb_draws' %}" class="{% if nav == 'equb_draws' %}active{% endif %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 8a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v2a2 2 0 0 0 0 4v2a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-2a2 2 0 0 0 0-4z"/><path d="M15 6v12" stroke-dasharray="2 2"/></svg>Equb draws{% if ec.draws_due %}<span class="nav-count">{{ ec.draws_due }}</span>{% endif %}</a>
       <a href="{% url 'console:equb_collections' %}" class="{% if nav == 'collections' %}active{% endif %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>Collections</a>
       <a href="{% url 'console:call_center' %}" class="{% if nav == 'call_center' %}active{% endif %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z"/></svg>Call centre{% if ec.uncalled %}<span class="nav-count">{{ ec.uncalled }}</span>{% endif %}</a>
+      {% kyc_count as kc %}<a href="{% url 'console:kyc_list' %}" class="{% if nav == 'kyc' %}active{% endif %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><circle cx="8" cy="11" r="2.5"/><path d="M4.5 16.5a3.5 3.5 0 0 1 7 0M14 10h5M14 14h4"/></svg>Eligibility forms{% if kc %}<span class="nav-count">{{ kc }}</span>{% endif %}</a>
       <a href="{% url 'console:terminations' %}" class="{% if nav == 'terminations' %}active{% endif %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="8" r="4"/><path d="M2 21a7 7 0 0 1 14 0M17 8l5 5m0-5l-5 5"/></svg>Terminations{% if ec.terminations %}<span class="nav-count">{{ ec.terminations }}</span>{% endif %}</a>
       <div class="nav-label">Community Finance &amp; Impact</div>
       <a href="{% url 'console:community' %}" class="{% if nav == 'community' %}active{% endif %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 14h2a2 2 0 1 0 0-4h-3c-.6 0-1.1.2-1.4.6L3 16"/><path d="M7 20l1.6-1.4c.3-.4.8-.6 1.4-.6h4c1.1 0 2.1-.4 2.8-1.2l4.6-4.4a2 2 0 0 0-2.8-2.9l-4.2 3.9"/><path d="M2 15l6 6"/><path d="M19.5 8.5c.7-.7 1.5-1.6 1.5-2.7A2.7 2.7 0 0 0 16 4a2.8 2.8 0 0 0-5 1.8c0 1.2.8 2 1.5 2.8L16 12z"/></svg>Crowdfunding</a>
@@ -49,7 +50,7 @@
   <main class="main">
     <div class="topbar">
       <div>
-        <div class="crumbs">{% block crumbs %}Vacation Equb console{% endblock %}</div>
+        <div class="crumbs">{% block crumbs %}EthioVacation console{% endblock %}</div>
         <h1>{% block heading %}{% endblock %}</h1>
       </div>
       <div style="display:flex;gap:12px;align-items:center">

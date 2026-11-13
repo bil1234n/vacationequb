@@ -133,11 +133,11 @@ def close_group(user, team: GroupEqub) -> GroupEqub:
 # --- invitations: the owner asks a customer (by phone) to join; they accept and pay for themselves ---------
 def _mask_name(name: str) -> str:
     parts = (name or "").split()
-    return " ".join([parts[0]] + [p[0] + "." for p in parts[1:2]]) if parts else "Vacation Equb customer"
+    return " ".join([parts[0]] + [p[0] + "." for p in parts[1:2]]) if parts else "EthioVacation customer"
 
 
 def lookup_phone(user, phone: str, team: GroupEqub | None = None) -> dict:
-    """Is there a Vacation Equb customer with this full phone number? (+251912345678 or 0912345678)"""
+    """Is there a EthioVacation customer with this full phone number? (+251912345678 or 0912345678)"""
     from apps.accounts.models import User, normalize_phone
 
     try:
@@ -148,7 +148,7 @@ def lookup_phone(user, phone: str, team: GroupEqub | None = None) -> dict:
         return {"found": False, "phone": phone, "reason": "Enter the full number, e.g. +251912345678."}
     other = User.objects.filter(phone=phone, is_active=True, is_staff=False).first()
     if not other:
-        return {"found": False, "phone": phone, "reason": "No Vacation Equb customer uses this number yet."}
+        return {"found": False, "phone": phone, "reason": "No EthioVacation customer uses this number yet."}
     out = {"found": True, "phone": phone, "user_id": other.id, "name": _mask_name(other.full_name),
            "is_me": other.id == user.id, "already_in": False, "pending": False}
     if team:

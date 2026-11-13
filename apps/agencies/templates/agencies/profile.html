@@ -8,7 +8,7 @@
   <div class="card"><div class="card-h"><h2>How you get paid</h2></div>
     <dl class="kv"><dt>Platform fee</dt><dd>{{ agency.commission_percent|floatformat:"-2" }}% of every ticket and package you sell</dd>
       <dt>Payout bank</dt><dd>{% if agency.account_number %}{{ agency.bank_name }} · {{ agency.account_name }} · {{ agency.account_number }}{% else %}Not set{% endif %}</dd>
-      <dt>Chapa split</dt><dd>{% if agency.chapa_subaccount_id %}<span class="badge b-green">On – Chapa pays your share at every payment</span>{% else %}<span class="badge b-grey">Off – Vacation Equb pays you out</span>{% endif %}</dd></dl>
-    <p class="small muted" style="margin-bottom:0">To change these details, contact Vacation Equb.</p></div>
+      <dt>Chapa split</dt><dd>{% if agency.chapa_subaccount_id %}<span class="badge b-green">On – Chapa pays your share at every payment</span>{% else %}<span class="badge b-grey">Off – EthioVacation pays you out</span>{% endif %}</dd></dl>
+    <p class="small muted" style="margin-bottom:0">To change these details, contact EthioVacation.</p></div>
 </div>
 {% endblock %}

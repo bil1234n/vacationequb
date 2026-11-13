@@ -1,4 +1,4 @@
-"""Forms for the agency portal and for managing agencies in the Vacation Equb console."""
+"""Forms for the agency portal and for managing agencies in the EthioVacation console."""
 from __future__ import annotations
 
 from django import forms
@@ -15,16 +15,16 @@ class AgencyForm(StyledMixin, forms.ModelForm):
     owner_name = forms.CharField(label="Owner full name", max_length=150, required=False)
     owner_phone = forms.CharField(label="Owner phone", max_length=20, required=False,
                                   help_text="The owner signs in to the agency portal with this number.")
-    owner_password = forms.CharField(label="Owner password", required=False, min_length=6,
-                                     widget=forms.PasswordInput(render_value=True),
-                                     help_text="At least 6 characters. Leave empty for an existing account.")
+    owner_password = forms.CharField(label="Owner PIN (6 numbers)", required=False, min_length=6, max_length=6,
+                                     widget=forms.PasswordInput(render_value=True, attrs={"inputmode": "numeric", "pattern": "[0-9]{6}"}),
+                                     help_text="Used to sign in to the app and the agency portal. Leave empty for an existing account.")
     bank_code = forms.TypedChoiceField(label="Bank", coerce=int, required=False, empty_value=None)
 
     sections = [
         ("Agency", "", ["name", "license_number", "tin", "phone", "email", "city", "address"]),
         ("Owner account", "The person who runs the agency. They can add their own sales agents later.",
          ["owner_name", "owner_phone", "owner_password"]),
-        ("Commission & status", "Vacation Equb's cut is taken from every ticket and package the agency sells.",
+        ("Commission & status", "EthioVacation's cut is taken from every ticket and package the agency sells.",
          ["commission_percent", "status"]),
         ("Payout bank account", "Chapa sends the agency's share of every sale here automatically, once the Chapa "
                                 "subaccount is created on the agency's page.",
@@ -36,7 +36,7 @@ class AgencyForm(StyledMixin, forms.ModelForm):
         model = Agency
         fields = ["name", "license_number", "tin", "phone", "email", "city", "address", "commission_percent",
                   "status", "bank_code", "account_name", "account_number", "notes"]
-        labels = {"commission_percent": "Vacation Equb commission (%)", "account_name": "Account holder name"}
+        labels = {"commission_percent": "EthioVacation commission (%)", "account_name": "Account holder name"}
 
     def __init__(self, *args, banks=None, **kwargs):
         super().__init__(*args, **kwargs)
@@ -69,8 +69,9 @@ class AgencyForm(StyledMixin, forms.ModelForm):
 class StaffForm(StyledMixin, forms.Form):
     full_name = forms.CharField(max_length=150)
     phone = forms.CharField(max_length=20, help_text="They sign in with this phone number.")
-    password = forms.CharField(min_length=6, widget=forms.PasswordInput(render_value=True), required=False,
-                               help_text="At least 6 characters. Leave empty if they already have an account.")
+    password = forms.CharField(label="PIN (6 numbers)", min_length=6, max_length=6, required=False,
+                               widget=forms.PasswordInput(render_value=True, attrs={"inputmode": "numeric", "pattern": "[0-9]{6}"}),
+                               help_text="They sign in to the app and portal with it. Leave empty if they already have an account.")
     role = forms.ChoiceField(choices=[(AgencyStaff.Role.AGENT, "Sales agent"), (AgencyStaff.Role.MANAGER, "Manager")])
     sections = [("Team member", "", ["full_name", "phone", "password", "role"])]
 
@@ -79,8 +80,9 @@ class CustomerForm(StyledMixin, forms.Form):
     full_name = forms.CharField(max_length=150, help_text="As written on their passport or ID.")
     phone = forms.CharField(max_length=20, help_text="Their own mobile number, e.g. 0911 234 567.")
     email = forms.EmailField(required=False)
-    password = forms.CharField(required=False, min_length=6, widget=forms.PasswordInput(render_value=True),
-                               help_text="Optional – lets them sign in to the Vacation Equb app too.")
+    password = forms.CharField(label="App PIN (6 numbers)", required=False, min_length=6, max_length=6,
+                               widget=forms.PasswordInput(render_value=True, attrs={"inputmode": "numeric", "pattern": "[0-9]{6}"}),
+                               help_text="Optional – lets them sign in to the EthioVacation app too.")
     notes = forms.CharField(required=False, widget=forms.Textarea(attrs={"rows": 3}))
     sections = [("Customer", "", ["full_name", "phone", "email", "password", "notes"])]
 

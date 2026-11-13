@@ -95,7 +95,7 @@ class DashboardView(APIView):
 
 
 LANDING_HTML = """<!doctype html><html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1"><title>Vacation Equb API</title>
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>EthioVacation API</title>
 <style>
 :root{--g:#0F382B;--g2:#1B4D3E;--soft:#E7F0EC;--line:#E1EAE5;--muted:#5B6F66}
 *{box-sizing:border-box}body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:#fff;color:#0D1F18}
@@ -110,8 +110,8 @@ a.card:hover{border-color:var(--g)}a.card.primary{background:#C9A227;border-colo
 code{background:var(--soft);color:var(--g);padding:2px 6px;border-radius:6px;font-size:13px}
 section{padding:0 24px 40px}section h2{font-size:17px}td{padding:6px 12px 6px 0;font-size:14px}
 </style></head><body>
-<header><div class="wrap"><small>ቬኬሽን ዕቁብ · Vacation Equb</small><h1>Backend is running</h1>
-<p>Flights &amp; packages · Travel Equb · Sadaqah crowdfunding · free giveaways</p>
+<header><div class="wrap"><small>ኢትዮ ቫኬሽን · EthioVacation</small><h1>Backend is running</h1>
+<p>Flights &amp; packages · Travel Equb · donation crowdfunding · free giveaways</p>
 <div class="status"><span class="dot"></span>Database connected · {flights} flights · {equbs} Equbs · {draws} live campaigns</div></div></header>
 <div class="wrap"><div class="grid">
 <a class="card primary" href="/console/"><b>Staff console →</b><span>Dashboard, charts, bookings, Equbs, draws</span></a>
@@ -119,10 +119,10 @@ section{padding:0 24px 40px}section h2{font-size:17px}td{padding:6px 12px 6px 0;
 <a class="card" href="/admin/"><b>Data admin →</b><span>Raw records: flights, fares, users</span></a>
 <a class="card" href="/api/travel/flights/?origin=ADD&amp;destination=DXB"><b>Flight search →</b><span>Addis Ababa → Dubai, live fares</span></a>
 <a class="card" href="/api/equb/groups/"><b>Equb pools →</b><span>Destination savings circles</span></a>
-<a class="card" href="/api/community/crowdfunding/"><b>Crowdfunding →</b><span>Sadaqah / Hibah campaigns for travellers</span></a>
+<a class="card" href="/api/community/crowdfunding/"><b>Crowdfunding →</b><span>Donation campaigns for travellers</span></a>
 <a class="card" href="/api/community/giveaways/"><b>Giveaways →</b><span>Free sponsored trips – 10 referrals = 1 entry</span></a>
 <a class="card" href="/privacy/"><b>Privacy policy →</b><span>What we collect and how to delete it</span></a>
-<a class="card" href="/account/delete/"><b>Delete my account →</b><span>Ask us to delete your Vacation Equb account</span></a>
+<a class="card" href="/account/delete/"><b>Delete my account →</b><span>Ask us to delete your EthioVacation account</span></a>
 </div></div>
 {demo}
 </body></html>"""

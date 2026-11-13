@@ -13,7 +13,7 @@
   <div style="display:flex;gap:18px;align-items:center"><span class="avatar lg" style="background:var(--gold);color:var(--green)">🤲</span>
     <div><div class="muted small">{{ c.get_category_display }} · {{ c.status|status_badge }} · started {{ c.starts_at|date:"d M Y" }}{% if c.ends_at %} · ends {{ c.ends_at|date:"d M Y" }}{% endif %}</div>
       <h2>{{ c.beneficiary_name }}</h2>
-      <div class="muted">{% if c.beneficiary %}<a href="{% url 'console:user' c.beneficiary_id %}" style="color:#fff;text-decoration:underline">{{ c.beneficiary.full_name }} · {{ c.beneficiary.phone }}</a>{% else %}No Vacation Equb account linked{% endif %}</div></div></div>
+      <div class="muted">{% if c.beneficiary %}<a href="{% url 'console:user' c.beneficiary_id %}" style="color:#fff;text-decoration:underline">{{ c.beneficiary.full_name }} · {{ c.beneficiary.phone }}</a>{% else %}No EthioVacation account linked{% endif %}</div></div></div>
   <div class="cf-progress"><div class="cf-progress-top"><b>{{ c.raised_amount|money }}</b><span>of {{ c.goal_amount|money }} · {{ c.progress_percent|floatformat:0 }}%</span></div><div class="cf-bar"><i style="width:{{ c.progress_percent|floatformat:0 }}%"></i></div></div>
   <div class="stats"><div><b>{{ c.donors_count }}</b><span>Donors</span></div><div><b>{{ c.donations_count }}</b><span>Gifts</span></div><div><b>{{ c.disbursed_amount|compact }}</b><span>Paid out (ETB)</span></div><div><b>{{ c.available_to_disburse|compact }}</b><span>To pay out (ETB)</span></div><div><b>{{ c.fees_collected|compact }}</b><span>Platform fees (ETB)</span></div></div>
 </div>
@@ -22,13 +22,12 @@
   <div class="card"><div class="card-h"><h2>Gifts per day</h2></div><div class="chart-box sm"><canvas data-chart="daily"></canvas></div></div>
   <div class="card"><div class="card-h"><h2>How people give</h2></div>
     <dl class="kv">
-      <dt>Sadaqah (charity)</dt><dd>{{ kinds.SADAQAH.s|default:0|money }} · {{ kinds.SADAQAH.n }}</dd>
-      <dt>Hibah (gift)</dt><dd>{{ kinds.HIBAH.s|default:0|money }} · {{ kinds.HIBAH.n }}</dd>
+      <dt>Donations</dt><dd>{{ kinds.DONATION.s|default:0|money }} · {{ kinds.DONATION.n }}</dd>
       <dt>Average gift</dt><dd>{{ avg|money }}</dd>
       <dt>Platform fee</dt><dd>{{ c.platform_fee_percent|floatformat:"-2" }}% on top</dd>
       <dt>Smallest gift</dt><dd>{{ c.min_donation }} ETB</dd>
     </dl>
-    <div class="note-box" style="margin-top:12px;font-size:13px">A donor giving 100 ETB pays {{ 100|add:c.platform_fee_percent|floatformat:"-2" }} ETB: 100 ETB goes to this campaign, the rest is Vacation Equb's fee.</div>
+    <div class="note-box" style="margin-top:12px;font-size:13px">A donor giving 100 ETB pays {{ 100|add:c.platform_fee_percent|floatformat:"-2" }} ETB: 100 ETB goes to this campaign, the rest is EthioVacation's fee.</div>
   </div>
 </div>
 

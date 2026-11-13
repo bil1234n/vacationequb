@@ -19,8 +19,8 @@
       {% if a.bank_code and a.account_number and a.account_name %}
       <form method="post" style="margin-top:12px" data-confirm="Register {{ a.account_name }} · {{ a.account_number }} with Chapa? Chapa will then send {{ a.name }} its share of every online sale automatically.">{% csrf_token %}<input type="hidden" name="action" value="subaccount"><button class="btn">Create Chapa subaccount</button></form>
       {% else %}<p class="small muted">Add the agency's bank, account holder and account number (<a href="{% url 'console:agency_edit' a.pk %}">Edit</a>), then create the subaccount.</p>{% endif %}
-      <p class="small muted" style="margin-bottom:0">Until it is linked, online sales come fully to Vacation Equb and the agency's share shows as owed below.</p>
-    {% else %}<p class="small muted" style="margin-bottom:0">On every online sale Chapa keeps {{ a.commission_percent|floatformat:"-2" }}% for Vacation Equb and settles the rest to this account.</p>{% endif %}
+      <p class="small muted" style="margin-bottom:0">Until it is linked, online sales come fully to EthioVacation and the agency's share shows as owed below.</p>
+    {% else %}<p class="small muted" style="margin-bottom:0">On every online sale Chapa keeps {{ a.commission_percent|floatformat:"-2" }}% for EthioVacation and settles the rest to this account.</p>{% endif %}
   </div>
   <div class="card"><div class="card-h"><h2>Agency</h2>{{ a.status|status_badge:a.get_status_display }}</div>
     <dl class="kv"><dt>Phone</dt><dd>{{ a.phone }}</dd><dt>Email</dt><dd>{{ a.email|default:"—" }}</dd><dt>Address</dt><dd>{{ a.address|default:"—" }}, {{ a.city }}</dd>

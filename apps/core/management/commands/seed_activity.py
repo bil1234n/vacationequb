@@ -1,7 +1,7 @@
 """
 Generate ~30 days of realistic DEMO activity so the console charts have data:
 customers, paid/pending/cancelled bookings, Equb contributions & a draw,
-crowdfunding donations (Sadaqah / Hibah) and referral sign-ups for giveaways. Uses the real services (sandbox
+crowdfunding donations (donations) and referral sign-ups for giveaways. Uses the real services (sandbox
 payments) and then back-dates timestamps. Run after ``seed_demo``.
 
     python manage.py seed_activity            # default volumes
@@ -243,7 +243,7 @@ class Command(BaseCommand):
             c = rnd.choice(camps)
             user = rnd.choice(customers)
             try:
-                donation, txn = community.start_donation(user, c, rnd.choice(amounts), kind=rnd.choice(["SADAQAH", "SADAQAH", "HIBAH"]),
+                donation, txn = community.start_donation(user, c, rnd.choice(amounts), kind="DONATION",
                                                          provider="mock", is_anonymous=rnd.random() < 0.15)
             except Exception:  # noqa: BLE001 – e.g. the goal was reached
                 continue

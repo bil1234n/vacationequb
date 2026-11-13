@@ -1,7 +1,7 @@
 """
 Periodic housekeeping. Run every minute from cron / systemd timer / Kubernetes CronJob:
 
-    * * * * *  cd /srv/vacation/backend && python manage.py run_scheduler
+    * * * * *  cd /srv/ethiovacation/backend && python manage.py run_scheduler
 
 (or with ``--loop`` as a long-running worker container).
 """

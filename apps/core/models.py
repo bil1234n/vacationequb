@@ -72,7 +72,7 @@ class AppRelease(TimeStampedModel):
         help_text="Optional: versions older than this must update even when the type is Normal.")
     store_url = models.URLField(blank=True, help_text="Link to the app in the store. Empty = the default store link.")
     title = models.CharField(max_length=80, default="A new version is available")
-    message = models.TextField(blank=True, default="Update Vacation Equb to get the latest features and fixes.")
+    message = models.TextField(blank=True, default="Update EthioVacation to get the latest features and fixes.")
     is_active = models.BooleanField(default=True)
 
     class Meta:

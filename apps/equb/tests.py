@@ -54,7 +54,7 @@ class EqubTests(TestCase):
         self.assertEqual(len(detail["current_round_detail"]["seed_commitment"]), 64)
         self.assertEqual(detail["my_current_contribution"]["status"], "PENDING")
         self.assertEqual(detail["my_standing"]["status"], st.CURRENT)
-        self.assertTrue(detail["rules_summary"])
+        self.assertEqual(detail["rules_summary"], [])  # the agreement is the Equb's Terms Content (none here)
 
         winners = set()
         staff = client_for(make_user("Admin", staff=True))
@@ -131,10 +131,7 @@ class EqubTests(TestCase):
         services.join_group(self.users[0], self.group)
         self.assertEqual(self.group.members_count, 1)
 
-    def test_late_fee(self):
-        rules = EqubSettings.load(); rules.late_fee = Decimal("500"); rules.save()
-        self.group = EqubGroup.objects.get(pk=self.group.pk)
-        self.group.save()
+    def test_late_payment_never_adds_a_fee(self):
         for u in self.users[:2]:
             services.join_group(u, self.group)
         services.start_group(self.group)
@@ -143,7 +140,7 @@ class EqubTests(TestCase):
         rnd.save()
         self.assertEqual(services.sweep_late_contributions(), 2)
         c = Contribution.objects.filter(round=rnd).first()
-        self.assertEqual(c.amount_due, Decimal("15500"))
+        self.assertEqual(c.amount_due, Decimal("15000"))  # riba-free: late, but no fee
         self.assertEqual(EqubMembership.objects.get(pk=c.membership_id).missed_count, 1)
 
 
@@ -175,7 +172,7 @@ class ProfessionalEqubTests(TestCase):
         self.make_overdue(self.r1)
         s = st.standing_for(self.m[0])
         self.assertEqual(s.status, st.NEVER_PAID)
-        self.assertEqual(s.arrears, Decimal("1050"))  # late fee is anticipated before the sweep runs
+        self.assertEqual(s.arrears, Decimal("1000"))  # no late fee
         self.assertEqual(s.days_overdue, 10)
         rules = EqubSettings.load()
         rules.warn_at, rules.block_at, rules.suspend_at = 1, 1, 1
@@ -195,10 +192,10 @@ class ProfessionalEqubTests(TestCase):
         plan = api.get(f"/api/equb/memberships/{m.id}/pay-options/").data
         self.assertTrue(plan["payable"])
         self.assertEqual(plan["overdue_count"], 1)
-        self.assertEqual([o["amount"] for o in plan["options"]], ["1050.00", "2050.00", "3050.00"])
+        self.assertEqual([o["amount"] for o in plan["options"]], ["1000.00", "2000.00", "3000.00"])
         r = api.post(f"/api/equb/memberships/{m.id}/pay/", {"rounds": 3, "provider": "mock"}, format="json")
         self.assertEqual(r.status_code, 201, r.data)
-        self.assertEqual(Decimal(r.data["amount"]), Decimal("3050"))
+        self.assertEqual(Decimal(r.data["amount"]), Decimal("3000"))
         self.assertEqual(checkout(r.data["reference"]).data["status"], "SUCCESS")
         record = EqubPayment.objects.get(membership=m)
         self.assertEqual(record.status, "PAID")
@@ -259,10 +256,7 @@ class ProfessionalEqubTests(TestCase):
         self.make_overdue(self.r1)
         services.sweep_late_contributions()
         c = Contribution.objects.get(round=self.r1, membership=self.m[0])
-        self.assertEqual(c.late_fee, Decimal("50"))
-        operations.waive_late_fee(c, self.staff, reason="Bank outage")
-        c.refresh_from_db()
-        self.assertEqual((c.late_fee, c.late_fee_waived), (Decimal("0"), True))
+        self.assertEqual(c.amount_due, Decimal("1000"))
         self.assertEqual(st.standing_for(self.m[0]).arrears, Decimal("1000"))
 
     def test_exit_request_termination_and_reinstatement(self):
@@ -290,7 +284,7 @@ class ProfessionalEqubTests(TestCase):
         self.make_overdue(self.r1)
         log = operations.log_call(self.m[0], self.staff, outcome=CallLog.Outcome.PROMISED,
                                   promised_date=timezone.localdate() + timedelta(days=2), feedback="Pays Friday")
-        self.assertEqual(log.arrears_at_call, Decimal("1050"))
+        self.assertEqual(log.arrears_at_call, Decimal("1000"))
         self.m[0].refresh_from_db()
         self.assertIsNotNone(self.m[0].called_at)
         services.record_office_payment(self.m[0], self.staff, method="cash", rounds=1)
@@ -544,7 +538,8 @@ class RoundsDrawnCalendarPayPrivacyTests(TestCase):
         api = client_for(self.other)
         self.assertEqual(api.post(f"/api/equb/groups/{self.g.slug}/join/").status_code, 201)
         m = EqubMembership.objects.get(group=self.g, user=self.other)
-        self.assertFalse(api.get(f"/api/equb/memberships/{m.id}/pay-options/").data["payable"])
+        # paying before the start is allowed: it is kept as credit for the first rounds
+        self.assertTrue(api.get(f"/api/equb/memberships/{m.id}/pay-options/").data["payable"])
         services.start_group(self.g)
         late = make_user("Late Joiner")
         self.assertEqual(client_for(late).post(f"/api/equb/groups/{self.g.slug}/join/").status_code, 201)
@@ -976,7 +971,7 @@ class RoundsDrawnFewerThanPaymentsTests(TestCase):
 
 
 class TermsDocumentTests(TestCase):
-    TEXT = ("# Vacation Equb Agreement\nPAYMENT TERMS\n1. Members pay **on time** every round.\n1.1 Late payers lose chance.\n"
+    TEXT = ("# EthioVacation Agreement\nPAYMENT TERMS\n1. Members pay **on time** every round.\n1.1 Late payers lose chance.\n"
             "- Chapa only\n\nThe winner travels within a year.\n<script>x</script>")
 
     def test_parse_blocks_and_html(self):
@@ -995,7 +990,7 @@ class TermsDocumentTests(TestCase):
         g = make_equb(name="Terms", contribution_amount=Decimal("10"), max_members=4, frequency_days=7,
                        start_date=timezone.localdate(), rules_text=self.TEXT)
         data = APIClient().get(f"/api/equb/groups/{g.slug}/").data
-        self.assertEqual(data["terms_document"]["blocks"][0]["text"], "Vacation Equb Agreement")
+        self.assertEqual(data["terms_document"]["blocks"][0]["text"], "EthioVacation Agreement")
         self.assertIn("Payment Terms", data["terms_document"]["headings"])
 
 
@@ -1109,3 +1104,69 @@ class EveryoneWinsTests(TestCase):
         g = services.reopen_if_short(EqubGroup.objects.get(pk=self.g.pk))
         self.assertEqual(g.status, "ACTIVE")
         self.assertTrue(g.rounds.get(number=3).extra_draw)
+
+
+# --------------------------------------------------------------------------- EthioVacation update
+@plenty_of_money()
+class CatchUpBillingAndEligibilityFormTests(TestCase):
+    """Late joiners pay the rounds that already ran; the eligibility form gates draws after N payments."""
+
+    def setUp(self):
+        self.g = make_equb(name="Daily Test", contribution_amount=Decimal("100"), max_members=5,
+                           duration_value=4, duration_unit="DAYS", start_date=timezone.localdate(),
+                           service_fee_percent=Decimal("0"))
+        self.a, self.b = make_user("Early"), make_user("Late")
+        services.join_group(self.a, self.g)
+        services.start_group(self.g)
+        self.g.refresh_from_db()
+
+    def test_late_joiner_is_billed_for_rounds_that_already_ran(self):
+        r1 = self.g.rounds.get(number=1)
+        services.close_payment_round(r1) if hasattr(services, "close_payment_round") else None
+        r1.refresh_from_db()
+        if r1.status == EqubRound.Status.COLLECTING:  # make round 1 finished
+            r1.status = EqubRound.Status.CLOSED
+            r1.save(update_fields=["status"])
+            services.open_round(self.g.rounds.get(number=2))
+        m = services.join_group(self.b, self.g)
+        numbers = sorted(Contribution.objects.filter(membership=m).values_list("round__number", flat=True))
+        self.assertIn(1, numbers)  # round 1 ran before they joined – still billed
+        s = st.standing_for(m)
+        self.assertEqual(s.paid_rounds, 0)
+        self.assertEqual(s.missed_rounds, 0)  # catch-up rounds are due from today, not late straight away
+        self.assertGreaterEqual(s.owes, Decimal("200"))
+        rows = {r["round"]: r for r in st.schedule_for(m)}
+        self.assertNotEqual(rows[1]["state"], "not_billed")
+        # paying one round settles the oldest (round 1) first
+        plan = services.payment_plan(m)
+        self.assertEqual(plan["items"][0]["round"], 1)
+
+    def test_eligibility_form_needed_after_n_payments(self):
+        EqubGroup.objects.filter(pk=self.g.pk).update(kyc_after_payments=1)
+        self.g.refresh_from_db()
+        m = EqubMembership.objects.get(group=self.g, user=self.a)
+        api = client_for(self.a)
+        r = api.post(f"/api/equb/memberships/{m.id}/pay/", {"rounds": 1, "provider": "mock"}, format="json")
+        self.assertEqual(r.status_code, 201, r.data)
+        checkout(r.data["reference"])
+        rnd = self.g.rounds.get(number=1)
+        entry = next(e for e in services.draw_pool(rnd)["entries"] if e["membership_id"] == m.id)
+        self.assertFalse(entry["eligible"])
+        self.assertTrue(any("Eligibility form" in x for x in entry["reasons"]))
+        detail = api.get(f"/api/equb/memberships/{m.id}/").data
+        self.assertTrue(detail["kyc"]["due"])
+        import base64
+        img = "data:image/jpeg;base64," + base64.b64encode(b"\xff\xd8\xff fake jpeg").decode()
+        r = api.post("/api/equb/memberships/eligibility-form/",
+                     {"photo": img, "id_front": img, "monthly_income": "25000", "national_id_number": "ET123"},
+                     format="json")
+        self.assertEqual(r.status_code, 201, r.data)
+        entry = next(e for e in services.draw_pool(rnd)["entries"] if e["membership_id"] == m.id)
+        self.assertTrue(entry["eligible"], entry["reasons"])
+        self.assertFalse(api.get(f"/api/equb/memberships/{m.id}/").data["kyc"]["due"])
+
+    def test_join_agreement_is_the_terms_content(self):
+        EqubGroup.objects.filter(pk=self.g.pk).update(rules_text="1. Pay on time\n2. Respect the draw")
+        data = client_for(self.b).get(f"/api/equb/groups/{self.g.slug}/").data
+        self.assertEqual(data["rules_summary"], ["Pay on time", "Respect the draw"])
+        self.assertTrue(data["terms_document"]["blocks"])

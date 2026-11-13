@@ -4,7 +4,7 @@ Member standing: what a member owes, what they have paid ahead, and how they hav
 One definition of "behind", used everywhere (app, console, draws, call centre, reports):
 
     overdue round   = a contribution not settled by its due date + the pool's grace days
-    arrears         = everything owed on overdue rounds (late fees included)
+    arrears         = everything owed on overdue rounds (no late fees – ever)
     missed rounds   = how many rounds are overdue
     days overdue    = days since the oldest unpaid round fell due
     credit          = money paid ahead, applied automatically as new rounds open
@@ -120,27 +120,21 @@ def _grace_deadline(due: date, group: EqubGroup) -> date:
     return due + timedelta(days=group.grace_days)
 
 
+def due_of(c: Contribution) -> date:
+    """When a slip is due: the round's due date, or the join date for a round that ran before the member joined."""
+    return c.catch_up_due or c.round.due_date
+
+
 def _is_overdue(c: Contribution, group: EqubGroup, today: date) -> bool:
-    return c.status in Contribution.UNSETTLED and today > _grace_deadline(c.round.due_date, group)
-
-
-def pending_fee(c: Contribution, group: EqubGroup, today: date) -> Decimal:
-    """Late fee this contribution carries (or will carry once the nightly sweep runs)."""
-    if c.late_fee:
-        return Decimal(c.late_fee)
-    if c.late_fee_waived or not group.late_fee:
-        return ZERO
-    return Decimal(group.late_fee) if _is_overdue(c, group, today) else ZERO
+    return c.status in Contribution.UNSETTLED and today > _grace_deadline(due_of(c), group)
 
 
 def _paid_on_time(c: Contribution, group: EqubGroup) -> bool:
     if c.status == Contribution.Status.WAIVED:
         return True  # covered from credit the moment the round opened
-    if c.late_fee or c.late_fee_waived:
-        return False
     if not c.paid_at:
         return True
-    return timezone.localtime(c.paid_at).date() <= _grace_deadline(c.round.due_date, group)
+    return timezone.localtime(c.paid_at).date() <= _grace_deadline(due_of(c), group)
 
 
 # --------------------------------------------------------------------------- core
@@ -157,16 +151,16 @@ def compute(m: EqubMembership, contributions: list[Contribution], rounds: list[E
     overdue = [c for c in contributions if _is_overdue(c, group, today)]
     open_unpaid = [c for c in contributions if c.status in Contribution.UNSETTLED and c not in overdue]
 
-    arrears = sum((c.amount + pending_fee(c, group, today) for c in overdue), ZERO)
-    due_now = sum((c.amount + pending_fee(c, group, today) for c in open_unpaid), ZERO)
+    arrears = sum((c.amount for c in overdue), ZERO)
+    due_now = sum((c.amount for c in open_unpaid), ZERO)
     paid_amount = sum((c.amount for c in settled), ZERO)
-    fees_paid = sum((Decimal(c.late_fee) for c in settled), ZERO)
-    expected_to_date = sum((c.amount for c in contributions if c.round.due_date <= today), ZERO)
-    paid_due = sum((c.amount for c in settled if c.round.due_date <= today), ZERO)
+    fees_paid = ZERO  # no late fees
+    expected_to_date = sum((c.amount for c in contributions if due_of(c) <= today), ZERO)
+    paid_due = sum((c.amount for c in settled if due_of(c) <= today), ZERO)
     credit = Decimal(m.prepaid_credit or 0)
     advance_rounds = int(credit // contribution) if contribution > 0 else 0
 
-    oldest = overdue[0].round.due_date if overdue else None
+    oldest = min(due_of(c) for c in overdue) if overdue else None
     days_overdue = (today - oldest).days if oldest else 0
 
     on_time = [_paid_on_time(c, group) for c in settled]
@@ -183,8 +177,8 @@ def compute(m: EqubMembership, contributions: list[Contribution], rounds: list[E
     next_amount, covered = ZERO, False
     if unpaid:
         first = unpaid[0]
-        next_round, next_date = first.round.number, first.round.due_date
-        next_amount = first.amount + pending_fee(first, group, today)
+        next_round, next_date = first.round.number, due_of(first)
+        next_amount = first.amount
     else:
         upcoming = [r for r in rounds if r.status == EqubRound.Status.UPCOMING]
         if upcoming and group.status == EqubGroup.Status.ACTIVE:
@@ -241,7 +235,7 @@ def _status(m: EqubMembership, group: EqubGroup, rules: EqubSettings, missed: in
 # --------------------------------------------------------------------------- loaders
 def _contrib_qs():
     return Contribution.objects.select_related("round").only(
-        "id", "membership_id", "amount", "late_fee", "late_fee_waived", "status", "paid_at",
+        "id", "membership_id", "amount", "catch_up_due", "status", "paid_at",
         "round__id", "round__number", "round__due_date", "round__draw_date", "round__status", "round__group_id")
 
 
@@ -299,7 +293,7 @@ def schedule_for(m: EqubMembership, today: date | None = None) -> list[dict]:
         winners = ["You" if p.membership.user_id == m.user_id else f"Member {p.membership.position}" for p in r.payouts.all()]
         row = {
             "round": r.number, "round_id": r.id, "due_date": r.due_date.isoformat(), "draw_date": r.draw_date.isoformat(),
-            "round_status": r.status, "amount": str(contribution), "late_fee": "0.00", "paid_at": None,
+            "round_status": r.status, "amount": str(contribution), "paid_at": None,
             "receipt": None, "you_won": bool(m.won_round_id and m.won_round_id == r.id), "winners": winners,
             "has_draw": draw_numbers is None or r.number in draw_numbers, "extra_draw": r.extra_draw,
         }
@@ -308,8 +302,7 @@ def schedule_for(m: EqubMembership, today: date | None = None) -> list[dict]:
             rows.append(row)
             continue
         if c:
-            fee = pending_fee(c, group, today)
-            row.update(amount=str(c.amount), late_fee=str(fee.quantize(Decimal("0.01"))),
+            row.update(amount=str(c.amount), due_date=due_of(c).isoformat(), catch_up=bool(c.catch_up_due),
                        paid_at=c.paid_at.isoformat() if c.paid_at else None,
                        receipt=c.payment_record.reference if c.payment_record_id else None)
             if c.status == Contribution.Status.WAIVED:

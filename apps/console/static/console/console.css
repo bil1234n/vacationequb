@@ -1,4 +1,4 @@
-/* Vacation Equb staff console — white surfaces, professional dark green */
+/* EthioVacation staff console — white surfaces, professional dark green */
 :root {
   --green: #0F382B; --green-2: #1B4D3E; --green-3: #3E8E6C; --green-soft: #E7F0EC; --green-tint: #F3F8F5;
   --gold: #C9A227; --gold-soft: #FBF5E1; --bg: #F6F9F7; --card: #FFFFFF; --line: #E1EAE5;
@@ -532,3 +532,15 @@ body.te-lock{overflow:hidden}
 .terms-doc .terms-sign{margin:30px 0 8px;max-width:300px}
 .terms-doc .terms-sign span{display:block;border-bottom:1.5px solid #3B4F46;height:34px}
 .terms-doc .terms-sign small{display:block;margin-top:6px;font-size:12.5px;color:#5B6B63;font-family:system-ui,sans-serif}
+
+/* ---- eligibility forms (KYC) ---- */
+.kyc-images { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 14px; }
+.kyc-images figure { margin: 0; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: #f6f8f7; }
+.kyc-images img { width: 100%; height: 220px; object-fit: contain; display: block; background: #eef2f0; }
+.kyc-images figcaption { padding: 8px 12px; font-size: 12px; font-weight: 600; color: var(--muted); }
+/* key/value summaries placed straight inside a padding-less form section */
+.form-section > dl.kv, .form-section > .kv { padding: 18px 22px; margin: 0; }
+.choice-list { display: grid; gap: 8px; }
+.check-row.choice { margin: 0; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: #fff; cursor: pointer; }
+.check-row.choice:has(input:checked) { border-color: var(--green); background: #f1f7f4; }
+.form-section > .form-actions { padding: 8px 22px 16px; position: static; background: none; }

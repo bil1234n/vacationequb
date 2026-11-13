@@ -83,7 +83,7 @@ def bookings(request):
                  b.flight.flight_number if b.flight_id else "", b.fare_class.name if b.fare_class_id else "",
                  b.pax, b.user.full_name, b.user.phone, b.contact_phone, b.get_funding_source_display(),
                  f"{b.total_amount:.2f}", f"{b.refunded_amount:.2f}"] for b in qs.iterator(chunk_size=500))
-        return _csv(f"vacation-bookings-{timezone.localdate()}.csv",
+        return _csv(f"ethiovacation-bookings-{timezone.localdate()}.csv",
                     ["Reference", "Created", "Status", "Type", "Trip", "Departure", "Flight", "Fare", "Travellers",
                      "Customer", "Customer phone", "Contact phone", "Funding", "Total (ETB)", "Refunded (ETB)"], rows)
 

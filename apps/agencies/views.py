@@ -1,8 +1,8 @@
 """
-Agency portal (/agency/): a travel agency's own workspace on Vacation Equb.
+Agency portal (/agency/): a travel agency's own workspace on EthioVacation.
 
 Agency staff sign in with the same login page as the console and only ever see their own agency's data:
-customers and their families, Equb places, ticket & package bookings, and their earnings after Vacation Equb's
+customers and their families, Equb places, ticket & package bookings, and their earnings after EthioVacation's
 commission.
 """
 from __future__ import annotations
@@ -124,7 +124,7 @@ def customer_add(request):
         if res:
             cust, created = res
             messages.success(request, f"{cust.user.full_name} is now your customer"
-                             + ("." if created else " (they already had a Vacation Equb account)."))
+                             + ("." if created else " (they already had a EthioVacation account)."))
             if request.POST.get("_another"):
                 return redirect("agency:customer_add")
             return redirect("agency:customer", pk=cust.pk)
@@ -143,7 +143,7 @@ def customer_detail(request, pk):
             messages.success(request, "Family member removed.")
         elif a == "password":
             _do(request, lambda: services.set_customer_password(c, p.get("password", "")),
-                f"{c.user.first_name} can now sign in to the app with their phone and this password.")
+                f"{c.user.first_name} can now sign in to the app with their phone and this 6-digit PIN.")
         elif a == "notes":
             c.notes = p.get("notes", "")[:2000]
             c.save(update_fields=["notes", "updated_at"])
@@ -204,11 +204,54 @@ def equb_enrol(request, slug):
         m = _do(request, lambda: services.enrol(c, g, family_member=fm))
         if m:
             messages.success(request, f"{m.display_name} holds place #{m.position} in {g.name}"
-                             + (f" – {c.user.first_name} pays for them." if fm else "."))
-            return redirect("agency:customer", pk=c.pk)
+                             + (f" – {c.user.first_name} pays for them." if fm else ".")
+                             + " Record the first payment below.")
+            return redirect("agency:place", pk=m.pk)
         return redirect("agency:equb_enrol", slug=slug)
     return render(request, "agencies/equb_enrol.html", _ctx(
         request, "equb", g=g, customers=custs, pre=request.GET.get("customer", "")))
+
+
+@agency_required()
+def place(request, pk):
+    """One customer's Equb place: what they owe, the schedule, and recording the money the agency received."""
+    from apps.equb import standing as standing_mod
+    from apps.equb.models import EqubPayment
+    from apps.equb.services import payment_plan
+
+    try:
+        m = services.customer_place(request.agency, pk)
+    except BusinessRuleError as exc:
+        messages.error(request, str(exc.detail))
+        return redirect("agency:equbs")
+    here = reverse("agency:place", args=[pk])
+    if request.method == "POST":
+        p = request.POST
+        if p.get("action") == "link":
+            txn = _do(request, lambda: services.equb_checkout(request.agency, pk, int(p.get("rounds") or 1)))
+            if txn and getattr(txn, "checkout_url", ""):
+                request.session["agency_pay_link"] = {"url": txn.checkout_url, "amount": str(txn.amount)}
+                messages.success(request, "Payment link ready – open it now or send it to the customer.")
+        else:
+            rounds = int(p.get("rounds") or 0) or None
+            amount = (p.get("amount") or "").replace(",", "").strip() or None
+            rec = _do(request, lambda: services.record_equb_payment(
+                request.agency, request.user, pk, method=p.get("method", ""), rounds=None if amount else rounds,
+                amount=amount, reference=p.get("reference", ""), note=p.get("note", "")))
+            if rec:
+                covered = rec.allocation.get("rounds", [])
+                messages.success(request, f"{rec.amount:,.0f} ETB recorded (receipt {rec.reference})"
+                                 + (f" – covers round{'s' if len(covered) > 1 else ''} "
+                                    f"{', '.join(str(r['round']) for r in covered)}." if covered else
+                                    " – kept as credit for the next rounds."))
+        return redirect(here)
+    st = standing_mod.standing_for(m)
+    link = request.session.pop("agency_pay_link", None)
+    payments = EqubPayment.objects.filter(membership=m).order_by("-created_at")[:20]
+    return render(request, "agencies/place.html", _ctx(
+        request, "equb", m=m, g=m.group, s=st, schedule=standing_mod.schedule_for(m), plan=payment_plan(m),
+        payments=payments, link=link, customer=m.user.agency_link,
+        methods=[(k, v) for k, v in EqubPayment.Method.choices if k in EqubPayment.OFFICE_METHODS]))
 
 
 # --------------------------------------------------------------------------- booking

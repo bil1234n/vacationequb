@@ -16,7 +16,7 @@
     <form method="post">{% csrf_token %}<input type="hidden" name="action" value="pay"><button class="btn">Get payment link</button></form>
   {% endif %}
 </div>
-{% elif b.status == 'CONFIRMED' %}<div class="msg success">Paid and ticketed – {{ b.user.first_name }} sees the e-tickets in the Vacation Equb app.</div>{% endif %}
+{% elif b.status == 'CONFIRMED' %}<div class="msg success">Paid and ticketed – {{ b.user.first_name }} sees the e-tickets in the EthioVacation app.</div>{% endif %}
 
 <div class="grid g-21 mt">
   <div class="card"><div class="card-h"><h2>Travellers</h2></div>

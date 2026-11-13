@@ -256,7 +256,41 @@ def sync_running_group(group: EqubGroup) -> EqubGroup:
                 apply_credit(m)
     elif not group.rounds.exclude(status=EqubRound.Status.UPCOMING).exists() and group.rounds.exists():
         open_round(group.rounds.order_by("number").first())
+    bill_missed_rounds(group)
     return group
+
+
+def bill_missed_rounds(group: EqubGroup, today: date | None = None) -> int:
+    """
+    Every member pays every round – also the rounds that ran before they joined (or were drawn without a slip for
+    them). Those "catch-up" slips are due from today, so a newcomer is not counted as late straight away, but they
+    are unpaid rounds: the member must pay them (oldest first) before they enter a draw.
+    """
+    today = today or timezone.localdate()
+    if group.status not in (EqubGroup.Status.ACTIVE, EqubGroup.Status.COMPLETED):
+        return 0
+    past = list(group.rounds.exclude(status=EqubRound.Status.UPCOMING).filter(extra_draw=False))
+    if not past:
+        return 0
+    have = set(Contribution.objects.filter(round__in=past).values_list("round_id", "membership_id"))
+    new = []
+    for m in _active_members(group).only("id"):
+        for r in past:
+            if (r.id, m.id) not in have:
+                new.append(Contribution(round=r, membership=m, amount=group.contribution_amount,
+                                        catch_up_due=max(today, r.due_date)))
+    if not new:
+        return 0
+    Contribution.objects.bulk_create(new, ignore_conflicts=True)
+    for r in past:
+        total = sum(r.contributions.values_list("amount", flat=True), Decimal("0"))
+        if total != r.expected_amount:
+            EqubRound.objects.filter(pk=r.pk).update(expected_amount=total)
+    for m in {c.membership for c in new}:
+        m.refresh_from_db(fields=["prepaid_credit"])
+        if m.prepaid_credit and m.prepaid_credit > 0:
+            apply_credit(m)
+    return len(new)
 
 
 def _active_members(group):
@@ -299,23 +333,23 @@ def start_contribution_payment(user, rnd: EqubRound, provider=None, payer_phone=
     c = contribution_for(user, rnd)
     if c.status in Contribution.SETTLED:
         raise BusinessRuleError("This contribution is already settled.")
-    apply_late_fee(c)
+    mark_late(c)
     return initiate_payment(user=user, target=c, amount=c.amount_due, purpose=PaymentTransaction.Purpose.EQUB_CONTRIBUTION,
                             provider=provider, payer_phone=payer_phone)
 
 
-def apply_late_fee(c: Contribution):
+def mark_late(c: Contribution):
+    """Past due + grace: the slip is marked LATE (counts as a missed round). No late fee is ever added – riba-free."""
     group = c.round.group
-    if c.status == Contribution.Status.PENDING and timezone.localdate() > c.round.due_date + timedelta(days=group.grace_days):
+    if c.status == Contribution.Status.PENDING and timezone.localdate() > c.due_date + timedelta(days=group.grace_days):
         c.status = Contribution.Status.LATE
-        fields = ["status", "updated_at"]
-        if group.late_fee and not c.late_fee_waived:
-            c.late_fee = group.late_fee
-            fields.append("late_fee")
-        c.save(update_fields=fields)
+        c.save(update_fields=["status", "updated_at"])
         EqubMembership.objects.filter(pk=c.membership_id).update(missed_count=F("missed_count") + 1)
         return True
     return False
+
+
+apply_late_fee = mark_late  # old name, kept for imports
 
 
 def mark_contribution_paid(c: Contribution, txn: PaymentTransaction | None = None, record: EqubPayment | None = None,
@@ -346,7 +380,7 @@ def apply_credit(m: EqubMembership) -> int:
     paid = 0
     for c in (Contribution.objects.select_related("round__group").filter(membership=m, status__in=Contribution.UNSETTLED)
               .order_by("round__number")):
-        apply_late_fee(c)
+        mark_late(c)
         if credit < c.amount_due:
             break
         mark_contribution_paid(c, status=Contribution.Status.WAIVED, note="Paid from your credit")
@@ -379,11 +413,13 @@ def on_contribution_failed(txn):
 
 
 def sweep_late_contributions() -> int:
-    """Mark contributions past due + grace as LATE (adds the pool's late fee). Notices go out via escalation."""
+    """Mark contributions past due + grace as LATE (no fee). Notices go out via escalation."""
+    for g in EqubGroup.objects.filter(status=EqubGroup.Status.ACTIVE):
+        bill_missed_rounds(g)
     n = 0
-    for c in Contribution.objects.filter(status=Contribution.Status.PENDING, round__status=EqubRound.Status.COLLECTING
-                                         ).select_related("round__group", "membership__user"):
-        if apply_late_fee(c):
+    for c in Contribution.objects.filter(status=Contribution.Status.PENDING).exclude(
+            round__status=EqubRound.Status.UPCOMING).select_related("round__group", "membership__user"):
+        if mark_late(c):
             n += 1
     return n
 
@@ -391,7 +427,7 @@ def sweep_late_contributions() -> int:
 # --- payments (multi-round, office) ----------------------------------------------------
 def payment_plan(m: EqubMembership, rules: EqubSettings | None = None, today: date | None = None) -> dict:
     """
-    What paying N rounds costs right now. Owed rounds come first (oldest first, late fees included),
+    What paying N rounds costs right now. Owed rounds come first (oldest first – never any late fee),
     then future rounds up to the advance limit. Existing credit is deducted.
     """
     rules = rules or EqubSettings.load()
@@ -402,21 +438,25 @@ def payment_plan(m: EqubMembership, rules: EqubSettings | None = None, today: da
                   .order_by("round__number"))
     items = []
     for c in unpaid:
-        fee = standing_mod.pending_fee(c, group, today)
-        overdue = today > c.round.due_date + timedelta(days=group.grace_days)
-        items.append({"round": c.round.number, "due_date": c.round.due_date.isoformat(), "amount": c.amount,
-                      "late_fee": fee, "kind": "overdue" if overdue else "due"})
-    payable = m.is_live and group.status == EqubGroup.Status.ACTIVE
+        overdue = today > c.due_date + timedelta(days=group.grace_days)
+        items.append({"round": c.round.number, "due_date": c.due_date.isoformat(), "amount": c.amount,
+                      "kind": "overdue" if overdue else "due"})
+    # Members may pay before the Equb starts: the money is kept as credit and pays round 1, 2… as they open.
+    payable = m.is_live and group.status in (EqubGroup.Status.ACTIVE, EqubGroup.Status.OPEN)
     if payable:
-        upcoming = list(group.rounds.filter(status=EqubRound.Status.UPCOMING).order_by("number")
-                        .values_list("number", "due_date")[: rules.max_advance_rounds])
+        if group.status == EqubGroup.Status.OPEN:
+            upcoming = [(n, due_date_for(group, n)) for n in range(1, min(rules.max_advance_rounds,
+                                                                           group.total_rounds or 1) + 1)]
+        else:
+            upcoming = list(group.rounds.filter(status=EqubRound.Status.UPCOMING).order_by("number")
+                            .values_list("number", "due_date")[: rules.max_advance_rounds])
         for number, due in upcoming:
-            items.append({"round": number, "due_date": due.isoformat(), "amount": contribution, "late_fee": ZERO,
+            items.append({"round": number, "due_date": due.isoformat(), "amount": contribution,
                           "kind": "advance"})
     credit = Decimal(m.prepaid_credit or 0)
     options, running = [], ZERO
     for i, it in enumerate(items, start=1):
-        running += it["amount"] + it["late_fee"]
+        running += it["amount"]
         amount = (running - credit).quantize(CENT)
         if amount <= 0:
             continue
@@ -425,14 +465,14 @@ def payment_plan(m: EqubMembership, rules: EqubSettings | None = None, today: da
             "rounds": i, "amount": str(amount), "from_round": items[0]["round"], "to_round": it["round"],
             "includes_overdue": "overdue" in kinds, "includes_advance": "advance" in kinds,
         })
-    owed = sum((it["amount"] + it["late_fee"] for it in items if it["kind"] != "advance"), ZERO)
+    owed = sum((it["amount"] for it in items if it["kind"] != "advance"), ZERO)
     return {
         "membership_id": m.id, "payable": payable and bool(options), "contribution": str(contribution),
         "credit": str(credit.quantize(CENT)), "owed": str(max(owed - credit, ZERO).quantize(CENT)),
         "overdue_count": sum(1 for it in items if it["kind"] == "overdue"),
-        "items": [{**it, "amount": str(it["amount"]), "late_fee": str(Decimal(it["late_fee"]).quantize(CENT))} for it in items],
+        "items": [{**it, "amount": str(it["amount"])} for it in items],
         "options": options, "max_advance_rounds": rules.max_advance_rounds,
-        "reason": None if payable else ("Payments open once the Equb starts." if m.is_live else "This place is no longer active."),
+        "reason": None if payable else ("This Equb is not taking payments." if m.is_live else "This place is no longer active."),
     }
 
 
@@ -482,12 +522,12 @@ def allocate_payment(record: EqubPayment, txn: PaymentTransaction | None = None)
     settled = []
     for c in (Contribution.objects.select_related("round__group").filter(membership=m, status__in=Contribution.UNSETTLED)
               .order_by("round__number")):
-        apply_late_fee(c)
+        mark_late(c)
         if available < c.amount_due:
             break
         mark_contribution_paid(c, txn, record, note=f"Receipt {record.reference}")
         available -= c.amount_due
-        settled.append({"round": c.round.number, "amount": str(c.amount), "late_fee": str(c.late_fee)})
+        settled.append({"round": c.round.number, "amount": str(c.amount)})
     EqubMembership.objects.filter(pk=m.pk).update(prepaid_credit=available)
     record.status = EqubPayment.Status.PAID
     record.paid_at = timezone.now()
@@ -521,8 +561,8 @@ def record_office_payment(m: EqubMembership, staff, *, method: str, amount=None,
     m = EqubMembership.objects.select_related("group", "user").get(pk=m.pk)
     if m.status == EqubMembership.Status.LEFT:
         raise BusinessRuleError("This member has left the Equb.")
-    if m.group.status not in (EqubGroup.Status.ACTIVE, EqubGroup.Status.COMPLETED):
-        raise BusinessRuleError("Payments can be recorded once the Equb has started.")
+    if m.group.status not in (EqubGroup.Status.OPEN, EqubGroup.Status.ACTIVE, EqubGroup.Status.COMPLETED):
+        raise BusinessRuleError("This Equb is not taking payments.")
     plan = payment_plan(m)
     if rounds:
         option = next((o for o in plan["options"] if o["rounds"] == int(rounds)), None)
@@ -614,6 +654,8 @@ def draw_pool(rnd: EqubRound, rules: EqubSettings | None = None, today: date | N
     ).values("membership_id").annotate(n=Count("id"), s=Sum("amount"))}
     ahead = set(Contribution.objects.filter(round__group=group, round__number__gt=rnd.number,
                                             status=Contribution.Status.PAID).values_list("membership_id", flat=True))
+    kyc_needed = group.kyc_after_payments or 0
+    kyc = kyc_status_by_user([m.user_id for m in members]) if kyc_needed else {}
     entries = []
     for m in members:
         st = standings[m.id]
@@ -635,6 +677,13 @@ def draw_pool(rnd: EqubRound, rules: EqubSettings | None = None, today: date | N
                     reasons.append(f"Owes {e['n']} earlier round{'s' if e['n'] > 1 else ''} ({money(e['s'])} ETB)")
             elif st.status in (standing_mod.BLOCKED, standing_mod.SUSPENDED, standing_mod.NEVER_PAID):
                 reasons.append(f"{st.missed_rounds} round{'s' if st.missed_rounds != 1 else ''} behind ({money(st.arrears)} ETB)")
+            if kyc_needed:
+                if st.paid_rounds < kyc_needed:
+                    reasons.append(f"Draws open after {kyc_needed} paid round{'s' if kyc_needed > 1 else ''} "
+                                   f"({st.paid_rounds} paid so far)")
+                elif kyc.get(m.user_id) not in ("SUBMITTED", "APPROVED"):
+                    reasons.append("Eligibility form was rejected – send it again" if kyc.get(m.user_id) == "REJECTED"
+                                   else "Eligibility form (photo, national ID, monthly income) not sent yet")
             unpaid_round = any("contribution not paid" in r for r in reasons)
             if st.paid_rounds < rules.min_paid_rounds_to_win and not unpaid_round:
                 reasons.append(f"Needs at least {rules.min_paid_rounds_to_win} paid round"
@@ -657,6 +706,31 @@ def draw_pool(rnd: EqubRound, rules: EqubSettings | None = None, today: date | N
     return {"round": rnd.number, "entries": entries, "eligible_count": len(eligible),
             "excluded_count": len(waiting) - len(eligible), "waiting_count": len(waiting),
             "winners_to_draw": k, "odds_percent": odds}
+
+
+def kyc_status_by_user(user_ids) -> dict:
+    from .models import MemberKYC
+
+    return dict(MemberKYC.objects.filter(user_id__in=list(user_ids)).values_list("user_id", "status"))
+
+
+def kyc_prompt(m: EqubMembership, st=None) -> dict | None:
+    """
+    Whether the app should ask this member for the eligibility form now: they have made the number of payments
+    the Equb asks for and have not sent the form (or it was rejected).
+    """
+    from .models import MemberKYC
+
+    need = m.group.kyc_after_payments or 0
+    if not need or not m.is_live or m.has_won:
+        return None
+    st = st or standing_mod.standing_for(m)
+    k = MemberKYC.objects.filter(user_id=m.user_id).only("status", "review_note").first()
+    status = k.status if k else None
+    return {"required_after": need, "paid_rounds": st.paid_rounds, "status": status,
+            "review_note": k.review_note if k else "",
+            "due": st.paid_rounds >= need and status not in ("SUBMITTED", "APPROVED"),
+            "eligible": st.paid_rounds >= need and status in ("SUBMITTED", "APPROVED")}
 
 
 def eligible_memberships(rnd: EqubRound) -> list[EqubMembership]:
@@ -1110,9 +1184,9 @@ def member_ledger(group: EqubGroup, viewer=None) -> list[dict]:
 
 def group_totals(group: EqubGroup) -> dict:
     agg = Contribution.objects.filter(round__group=group, status__in=Contribution.SETTLED).aggregate(
-        s=Sum("amount"), fees=Sum("late_fee"))
+        s=Sum("amount"))
     payouts = EqubPayout.objects.filter(round__group=group).aggregate(n=Count("id"), s=Sum("amount"), fee=Sum("fee_amount"))
-    return {"total_collected": str(agg["s"] or 0), "late_fees_collected": str(agg["fees"] or 0),
+    return {"total_collected": str(agg["s"] or 0), 
             "payouts_issued": payouts["n"] or 0, "payouts_total": str(payouts["s"] or 0),
             "service_fees": str(payouts["fee"] or 0),
             "rounds_drawn": group.rounds.filter(status=EqubRound.Status.DRAWN).count()}

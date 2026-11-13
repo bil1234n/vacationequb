@@ -1,5 +1,5 @@
 """
-Vacation Equb staff console — a server-rendered web dashboard for operations staff.
+EthioVacation staff console — a server-rendered web dashboard for operations staff.
 
 Every page is staff-only. Charts are rendered client-side with Chart.js from a
 single JSON config emitted per page (see ``static/console/console.js``).
@@ -53,7 +53,7 @@ def staff_required(view):
             if staff_for(request.user):
                 return redirect("agency:dashboard")
             logout(request)
-            messages.error(request, "The console is for Vacation Equb staff accounts only.")
+            messages.error(request, "The console is for EthioVacation staff accounts only.")
             return redirect("console:login")
         return view(request, *args, **kwargs)
     return wrapper
@@ -174,7 +174,7 @@ def dashboard(request):
     equb_saved = Contribution.objects.filter(status="PAID", paid_at__gte=since).aggregate(s=Sum("amount"))["s"] or 0
     gifts = Donation.objects.filter(status="PAID", paid_at__gte=since).aggregate(s=Sum("amount"), f=Sum("fee_amount"))
     crowd_raised, crowd_fees = gifts["s"] or 0, gifts["f"] or 0
-    rate = Decimal(str(settings.VACATION["COMPANY_PROFIT_PERCENT"]))
+    rate = Decimal(str(settings.ETHIOVACATION["COMPANY_PROFIT_PERCENT"]))
     profit = (Decimal(revenue) * rate / 100).quantize(Decimal("0.01"))
     profit_prev = Decimal(revenue_prev) * rate / 100
 

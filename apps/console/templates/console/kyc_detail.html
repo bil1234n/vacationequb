@@ -1,0 +1,45 @@
+{% extends "console/base.html" %}{% load console_tags %}
+{% block title %}Eligibility form · {{ k.user.full_name }}{% endblock %}{% block heading %}{{ k.user.full_name }}{% endblock %}
+{% block crumbs %}<a href="{% url 'console:kyc_list' %}">Eligibility forms</a> / {{ k.get_status_display }}{% endblock %}
+{% block content %}
+<div class="grid g-2">
+  <div class="card">
+    <div class="card-h"><h2>Pictures</h2><span class="small muted">Click a picture to open it full size</span></div>
+    <div class="kyc-images">
+      <figure><a href="{% url 'console:kyc_image' k.pk 'photo' %}" target="_blank"><img src="{% url 'console:kyc_image' k.pk 'photo' %}" alt="Member photo"></a><figcaption>Photo</figcaption></figure>
+      <figure><a href="{% url 'console:kyc_image' k.pk 'id_front' %}" target="_blank"><img src="{% url 'console:kyc_image' k.pk 'id_front' %}" alt="National ID front"></a><figcaption>National ID – front</figcaption></figure>
+      {% if has_back %}<figure><a href="{% url 'console:kyc_image' k.pk 'id_back' %}" target="_blank"><img src="{% url 'console:kyc_image' k.pk 'id_back' %}" alt="National ID back"></a><figcaption>National ID – back</figcaption></figure>{% endif %}
+    </div>
+  </div>
+  <div>
+    <div class="card">
+      <div class="card-h"><h2>Details</h2>{% if k.status == 'APPROVED' %}<span class="badge b-green">Approved</span>{% elif k.status == 'REJECTED' %}<span class="badge b-red">Rejected</span>{% else %}<span class="badge b-gold">Waiting for review</span>{% endif %}</div>
+      <dl class="kv">
+        <dt>Phone</dt><dd>{{ k.user.phone|tel }}</dd>
+        <dt>National ID no.</dt><dd class="mono">{{ k.national_id_number|default:"—" }}</dd>
+        <dt>Monthly income</dt><dd>{{ k.monthly_income|money }}</dd>
+        <dt>Income source</dt><dd>{{ k.income_source|default:"—" }}</dd>
+        <dt>Sent</dt><dd>{{ k.updated_at|date:"d M Y H:i" }}</dd>
+        {% if k.reviewed_at %}<dt>Reviewed</dt><dd>{{ k.reviewed_at|date:"d M Y H:i" }} · {{ k.reviewed_by.full_name|default:"—" }}</dd>{% endif %}
+        {% if k.review_note %}<dt>Note</dt><dd>{{ k.review_note }}</dd>{% endif %}
+      </dl>
+    </div>
+    <div class="card mt">
+      <div class="card-h"><h2>Decision</h2></div>
+      <form method="post">{% csrf_token %}
+        <div class="field"><label for="note">Note to the member</label><input id="note" type="text" name="note" maxlength="255" placeholder="Needed when rejecting, e.g. The ID photo is blurry"></div>
+        <div class="form-actions" style="padding:0;border:0;background:none">
+          <button class="btn danger" name="action" value="reject">Reject – ask again</button><span class="grow"></span>
+          <button class="btn" name="action" value="approve">Approve</button>
+        </div>
+      </form>
+    </div>
+    <div class="card mt">
+      <div class="card-h"><h2>Equb places</h2></div>
+      <div class="table-wrap"><table class="t"><tbody>
+      {% for m in places %}<tr><td><a href="{% url 'console:equb_member' m.pk %}">{{ m.group.name }}</a></td><td>#{{ m.position }}</td><td>{{ m.status|status_badge }}</td></tr>
+      {% empty %}<tr><td class="empty">No Equb places.</td></tr>{% endfor %}</tbody></table></div>
+    </div>
+  </div>
+</div>
+{% endblock %}

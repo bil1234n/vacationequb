@@ -113,39 +113,9 @@ class MyMembershipSerializer(serializers.ModelSerializer):
         fields = ["id", "position", "status", "has_won", "total_paid", "missed_count", "prepaid_credit"]
 
 
-def rules_summary(g: EqubGroup, rules: EqubSettings) -> list[str]:
-    total = g.total_rounds
-    if g.rounds_drawn and g.rounds_drawn < total:
-        out = [f"Pay {money(g.contribution_amount)} ETB {g.every} for {total} rounds. There are {g.rounds_drawn} draw"
-               f"{'s' if g.rounds_drawn > 1 else ''}, spread over the rounds and ending in the last one – the other "
-               "rounds only collect payments."]
-    else:
-        out = [f"Pay {money(g.contribution_amount)} ETB {g.every} for {total} rounds – one draw each round."]
-    if Decimal(g.late_fee):
-        out.append(f"You have {g.grace_days} days' grace after each due date; after that a late fee of "
-                   f"{money(g.late_fee)} ETB is added.")
-    else:
-        out.append(f"You have {g.grace_days} days' grace after each due date.")
-    if g.require_paid_to_draw:
-        out.append("Only members who have paid the round (and nothing older) enter its draw.")
-    out.append(f"{rules.block_at} unpaid rounds keep you out of draws until you catch up; "
-               f"{rules.suspend_at} unpaid rounds can lead to your place being cancelled.")
-    if g.draw_type == EqubGroup.DrawType.MANUAL:
-        out.append("vacation Travel runs each round's draw on the draw date and announces the winner in the app.")
-    else:
-        out.append("A provably-fair random draw runs automatically on each draw date – you can verify it in the app.")
-    basis = ("guaranteed by vacation Travel" if g.payout_basis == EqubGroup.PayoutBasis.FULL_POT
-             else "from what was collected by draw day")
-    if g.payment_rounds:
-        out.append(f"Each winner receives the price per person – {money(g.price_per_person)} ETB – "
-                   f"less the {g.service_fee_percent.normalize()}% service fee.")
-    else:
-        out.append(f"Every member wins once. Each winner receives about {money(g.payout_per_winner)} ETB ({basis}), "
-                   f"after a {g.service_fee_percent.normalize()}% service fee.")
-    out.append(f"You can pay up to {rules.max_advance_rounds} rounds ahead; early payments are used automatically.")
-    out.append("Before the Equb starts you can leave freely. Once it is running, leaving needs approval from vacation Travel.")
-    out += [line.strip() for line in (g.rules_text or "").splitlines() if line.strip()]
-    return out
+def rules_summary(g: EqubGroup, rules: EqubSettings | None = None) -> list[str]:
+    """The joining agreement is always the Equb's own Terms Content (staff write it in the console)."""
+    return terms_lines(g)
 
 
 def terms_text(g: EqubGroup) -> str:
@@ -178,7 +148,7 @@ class EqubGroupDetailSerializer(EqubGroupListSerializer):
 
     class Meta(EqubGroupListSerializer.Meta):
         fields = EqubGroupListSerializer.Meta.fields + [
-            "service_fee_percent", "late_fee", "grace_days",
+            "service_fee_percent", "grace_days", "kyc_after_payments",
             "require_paid_to_draw", "payout_basis", "payout_basis_display", "organizer_name", "rules_summary", "terms_content", "terms_document", "rejoin",
             "join_code", "current_round_detail", "my_membership", "my_current_contribution", "my_standing",
         ]
@@ -243,7 +213,7 @@ class EqubGroupWriteSerializer(serializers.ModelSerializer):
     class Meta:
         model = EqubGroup
         fields = ["equb_package", "name", "contribution_amount", "frequency_days", "max_members", "rounds_drawn", "duration_value",
-                  "duration_unit", "start_date", "end_date", "rules_text", "status", "draw_type"]
+                  "duration_unit", "start_date", "end_date", "rules_text", "status", "draw_type", "kyc_after_payments"]
         extra_kwargs = {"frequency_days": {"required": False}}  # set from the Duration Unit
 
 
@@ -251,13 +221,13 @@ class ContributionSerializer(serializers.ModelSerializer):
     round_number = serializers.IntegerField(source="round.number", read_only=True)
     group = serializers.CharField(source="round.group.slug", read_only=True)
     group_name = serializers.CharField(source="round.group.name", read_only=True)
-    due_date = serializers.DateField(source="round.due_date", read_only=True)
+    due_date = serializers.DateField(read_only=True)
     amount_due = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
     receipt = serializers.CharField(source="payment_record.reference", read_only=True, default=None)
 
     class Meta:
         model = Contribution
-        fields = ["id", "group", "group_name", "round", "round_number", "due_date", "amount", "late_fee", "amount_due",
+        fields = ["id", "group", "group_name", "round", "round_number", "due_date", "amount", "amount_due",
                   "status", "paid_at", "receipt", "note"]
 
 

@@ -192,17 +192,17 @@ class EqubForm(StyledMixin, forms.ModelForm):
         label="Price per person", required=False, disabled=True,
         help_text="Contribution Amount × Duration Value – what each member (winners too) pays in total.")
     sections = [("", "", ["equb_package", "name", "contribution_amount", "duration_value",
-                          "duration_unit", "price_per_person", "max_members", "rounds_drawn", "service_fee_override",
-                          "start_date", "end_date", "status", "draw_type", "rules_text"])]
+                          "duration_unit", "price_per_person", "max_members", "rounds_drawn", "kyc_after_payments",
+                          "service_fee_override", "start_date", "end_date", "status", "draw_type", "rules_text"])]
     create_another = True
 
     class Meta:
         model = EqubGroup
-        fields = ["equb_package", "name", "contribution_amount", "max_members", "rounds_drawn",
+        fields = ["equb_package", "name", "contribution_amount", "max_members", "rounds_drawn", "kyc_after_payments",
                   "service_fee_override", "duration_value", "duration_unit", "start_date", "end_date", "rules_text",
                   "status", "draw_type"]
         labels = {"equb_package": "Equb Package", "name": "Name", "contribution_amount": "Contribution Amount",
-                  "rounds_drawn": "Rounds Drawn",
+                  "rounds_drawn": "Rounds Drawn", "kyc_after_payments": "Eligibility form after (payments)",
                   "frequency_days": "Contribution Frequency (Days)", "max_members": "Members",
                   "duration_value": "Duration Value", "duration_unit": "Duration Unit", "start_date": "Equb Start Date",
                   "end_date": "Equb End Date", "rules_text": "Terms Content", "status": "Status", "draw_type": "Draw Type"}
@@ -234,6 +234,13 @@ class EqubForm(StyledMixin, forms.ModelForm):
                                                f"{default_fee:g}% from Equb rules.")
         f["max_members"].widget.attrs.update(min=2, max=10000, step=1)
         f["rounds_drawn"].widget.attrs.update(min=1, max=10000, step=1, placeholder="One draw every round")
+        f["kyc_after_payments"].widget.attrs.update(min=0, max=1000, step=1, placeholder="0 = off")
+        f["kyc_after_payments"].required = False
+        if not self.instance.pk and not self.is_bound:
+            f["kyc_after_payments"].initial = 3
+        f["kyc_after_payments"].help_text = ("Members enter draws only after paying this many rounds and sending a "
+                                             "photo, their national ID and monthly income (the app asks for it). "
+                                             "Draws before that have no eligible members. 0 = off.")
         f["contribution_amount"].widget.attrs.update(placeholder="e.g. 70000")
         f["price_per_person"].widget.attrs.update({"data-price": "1", "readonly": True})
         inst = self.instance
@@ -263,6 +270,11 @@ class EqubForm(StyledMixin, forms.ModelForm):
         if rd and payments and rd > payments:
             self.add_error("rounds_drawn", f"Members pay {payments} time{'s' if payments > 1 else ''} in this duration, "
                                            f"so there can be at most {payments} draw{'s' if payments > 1 else ''}.")
+        kyc = d.get("kyc_after_payments") or 0
+        d["kyc_after_payments"] = kyc
+        if kyc and payments and kyc >= payments:
+            self.add_error("kyc_after_payments", f"Members only pay {payments} time{'s' if payments > 1 else ''} – "
+                                                 "use a smaller number, or 0 to switch the form off.")
         if self.instance.pk and mx and mx < self.instance.members_count:
             self.add_error("max_members", f"{self.instance.members_count} members have already joined.")
         start, value, unit = d.get("start_date"), d.get("duration_value"), d.get("duration_unit")
@@ -481,7 +493,7 @@ class DrawSettingsForm(StyledMixin, forms.ModelForm):
 
 class EqubRulesForm(StyledMixin, forms.ModelForm):
     sections = [
-        ("Money rules", "Apply to every Equb.", ["service_fee_percent", "late_fee", "grace_days", "payout_basis",
+        ("Money rules", "Apply to every Equb. There is no late fee – late payments only affect draw eligibility.", ["service_fee_percent", "grace_days", "payout_basis",
                                                  "require_paid_to_draw", "auto_start_when_full"]),
         ("When is a member behind?", "Counted in unpaid rounds (a round is unpaid once its due date and the pool's grace days have passed).",
          ["warn_at", "block_at", "suspend_at", "auto_flag_for_termination"]),
@@ -493,11 +505,11 @@ class EqubRulesForm(StyledMixin, forms.ModelForm):
 
     class Meta:
         model = EqubSettings
-        fields = ["service_fee_percent", "late_fee", "grace_days", "payout_basis", "require_paid_to_draw",
+        fields = ["service_fee_percent", "grace_days", "payout_basis", "require_paid_to_draw",
                   "auto_start_when_full", "warn_at", "block_at", "suspend_at", "auto_flag_for_termination",
                   "min_paid_rounds_to_win", "max_advance_rounds", "pending_payment_minutes", "reminder_days_before",
                   "send_overdue_notices", "call_after_days", "terminate_after_days"]
-        labels = {"service_fee_percent": "Service fee (%)", "late_fee": "Late fee (ETB)", "grace_days": "Grace days",
+        labels = {"service_fee_percent": "Service fee (%)", "grace_days": "Grace days",
                   "payout_basis": "Winner receives", "require_paid_to_draw": "Only paid-up members enter the draw",
                   "auto_start_when_full": "Start an Equb automatically when it is full",
                   "warn_at": "Warn after (unpaid rounds)", "block_at": "Leave out of draws after (unpaid rounds)",
@@ -522,11 +534,11 @@ class EqubRulesForm(StyledMixin, forms.ModelForm):
 
 # ----------------------------------------------------------------- community finance & impact
 class CrowdfundingForm(StyledMixin, forms.ModelForm):
-    """Crowdfunding Hub (Sadaqah / Hibah): the gift goes 100% to the cause, the platform fee is added on top."""
+    """Crowdfunding Hub (donations): the gift goes 100% to the cause, the platform fee is added on top."""
 
     sections = [
         ("Campaign", "", ["title", "category", "story", "image_url", "is_featured"]),
-        ("Who is helped", "Donors see the beneficiary's name. Link their Vacation Equb account to notify them of each gift.",
+        ("Who is helped", "Donors see the beneficiary's name. Link their EthioVacation account to notify them of each gift.",
          ["beneficiary_name", "beneficiary", "goal_amount"]),
         ("Giving", "Every gift goes 100% to the campaign. The platform fee is a separate amount the donor pays on top "
                    "(100 ETB gift + 5% = 105 ETB at checkout).", ["platform_fee_percent", "min_donation"]),
@@ -539,7 +551,7 @@ class CrowdfundingForm(StyledMixin, forms.ModelForm):
                   "goal_amount", "platform_fee_percent", "min_donation", "starts_at", "ends_at", "status"]
         labels = {"goal_amount": "Goal (ETB)", "platform_fee_percent": "Platform fee added on top (%)",
                   "min_donation": "Smallest gift (ETB)", "is_featured": "Feature on the app home screen",
-                  "image_url": "Image URL", "beneficiary": "Beneficiary's vacation account", "story": "Story"}
+                  "image_url": "Image URL", "beneficiary": "Beneficiary's EthioVacation account", "story": "Story"}
         widgets = {"starts_at": forms.DateTimeInput(attrs={"type": "datetime-local"}, format="%Y-%m-%dT%H:%M"),
                    "ends_at": forms.DateTimeInput(attrs={"type": "datetime-local"}, format="%Y-%m-%dT%H:%M")}
 
@@ -556,7 +568,7 @@ class CrowdfundingForm(StyledMixin, forms.ModelForm):
                                (self.instance.pk and self.instance.status == "FUNDED")]
         if not self.instance.pk:
             self.initial.update(starts_at=timezone.localtime().replace(second=0, microsecond=0), status="LIVE",
-                                platform_fee_percent=Decimal(str(settings.VACATION["CROWDFUND_FEE_PERCENT"])), min_donation=10)
+                                platform_fee_percent=Decimal(str(settings.ETHIOVACATION["CROWDFUND_FEE_PERCENT"])), min_donation=10)
         elif self.instance.donations_count:
             self.disable("platform_fee_percent", reason="Fixed after the first gift, so every donor saw the same fee.")
 
@@ -582,7 +594,7 @@ class DisbursementForm(StyledMixin, forms.Form):
 
 
 class GiveawayForm(StyledMixin, forms.ModelForm):
-    """Community Giveaway: 100% paid by vacation or a sponsor. Entry is free – earned only by inviting friends."""
+    """Community Giveaway: 100% paid by EthioVacation or a sponsor. Entry is free – earned only by inviting friends."""
 
     sections = [
         ("Giveaway", "", ["title", "description", "image_url", "is_featured"]),
@@ -590,7 +602,7 @@ class GiveawayForm(StyledMixin, forms.ModelForm):
          ["sponsor_type", "sponsor_name", "sponsor_note", "sponsor_logo_url"]),
         ("Prize", "Winners receive this as credit on a booking or as paid Equb contributions.",
          ["prize_type", "prize_title", "prize_value", "number_of_winners", "prize_package", "prize_equb_group"]),
-        ("Free entries", "Nobody pays to enter. Each person earns an entry for every N friends who register on vacation "
+        ("Free entries", "Nobody pays to enter. Each person earns an entry for every N friends who register on EthioVacation "
                          "with their referral code while the giveaway is running.", ["referrals_per_entry", "max_entries_per_user"]),
         ("Schedule", "", ["starts_at", "ends_at", "draw_at", "status"]),
     ]
@@ -617,8 +629,8 @@ class GiveawayForm(StyledMixin, forms.ModelForm):
         if not self.instance.pk:
             now = timezone.localtime().replace(second=0, microsecond=0)
             self.initial.update(starts_at=now, ends_at=now + timedelta(days=21), draw_at=now + timedelta(days=21, hours=1),
-                                referrals_per_entry=settings.VACATION["REFERRALS_PER_GIVEAWAY_ENTRY"], status="LIVE",
-                                sponsor_name="Vacation Equb")
+                                referrals_per_entry=settings.ETHIOVACATION["REFERRALS_PER_GIVEAWAY_ENTRY"], status="LIVE",
+                                sponsor_name="EthioVacation")
         elif self.instance.entries_issued:
             self.disable("prize_type", "prize_value", "number_of_winners", "referrals_per_entry", "starts_at",
                          reason="Fixed after the first entry was earned.")

@@ -16,8 +16,8 @@ from .models import User, normalize_phone
 
 
 def _context(**extra):
-    return {"support_email": settings.VACATION["SUPPORT_EMAIL"], "company": "Vacation Equb",
-            "updated": settings.VACATION["PRIVACY_UPDATED"], "year": timezone.localdate().year, **extra}
+    return {"support_email": settings.ETHIOVACATION["SUPPORT_EMAIL"], "company": "EthioVacation",
+            "updated": settings.ETHIOVACATION["PRIVACY_UPDATED"], "year": timezone.localdate().year, **extra}
 
 
 def privacy_policy(request):

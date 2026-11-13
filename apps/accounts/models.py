@@ -24,6 +24,19 @@ def normalize_phone(raw: str) -> str:
     return digits
 
 
+PIN_RE = re.compile(r"^\d{6}$")
+WEAK_PINS = {"123456", "654321", "012345", "543210", "123123", "121212", "112233", "000111"}
+
+
+def validate_pin(value: str):
+    """The app signs in with a 6-digit PIN (like telebirr): numbers only, not too easy to guess."""
+    value = (value or "").strip()
+    if not PIN_RE.match(value):
+        raise ValidationError("Your PIN must be exactly 6 numbers.")
+    if len(set(value)) == 1 or value in WEAK_PINS:
+        raise ValidationError("This PIN is too easy to guess. Choose 6 numbers that are not in a row or repeated.")
+
+
 def validate_phone(value: str):
     if not ETH_PHONE_RE.match(value):
         raise ValidationError("Enter a valid Ethiopian mobile number, e.g. +251911234567.")
@@ -80,6 +93,8 @@ class User(AbstractBaseUser, PermissionsMixin):
 
     push_token = models.CharField(max_length=255, blank=True)
     is_phone_verified = models.BooleanField(default=False)
+    pin_set = models.BooleanField(default=False, help_text="Signs in with a 6-digit PIN (accounts made before PINs "
+                                                            "are asked to set one after their next sign-in).")
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
     date_joined = models.DateTimeField(default=timezone.now)

@@ -193,11 +193,6 @@ def collections(start: date, end: date, group_id: int | None = None) -> dict:
     if group_id:
         payouts = payouts.filter(round__group_id=group_id)
     pagg = payouts.aggregate(n=Count("id"), s=Sum("amount"), gross=Sum("gross_amount"), fee=Sum("fee_amount"))
-    fees_late = Contribution.objects.filter(status__in=Contribution.SETTLED, paid_at__gte=_aware(start),
-                                            paid_at__lte=_aware(end, True), late_fee__gt=0)
-    if group_id:
-        fees_late = fees_late.filter(round__group_id=group_id)
-    late_fees = fees_late.aggregate(s=Sum("late_fee"))["s"] or ZERO
     return {
         "start": start, "end": end, "total": total, "count": len(txns), "payers": len(payers),
         "office": office, "online": total - office, "average": (total / len(txns)) if txns else ZERO,
@@ -205,8 +200,8 @@ def collections(start: date, end: date, group_id: int | None = None) -> dict:
         "by_method": sorted(((k, v) for k, v in by_method.items()), key=lambda kv: -kv[1]),
         "by_pool": sorted(((k, v) for k, v in by_pool_.items()), key=lambda kv: -kv[1]),
         "payouts_count": pagg["n"] or 0, "payouts_total": pagg["s"] or ZERO,
-        "service_fees": pagg["fee"] or ZERO, "late_fees": late_fees,
-        "revenue": (pagg["fee"] or ZERO) + late_fees,
+        "service_fees": pagg["fee"] or ZERO,
+        "revenue": pagg["fee"] or ZERO,
         "transactions": sorted(txns, key=lambda t: t.completed_at, reverse=True)[:200],
         "txn_groups": gmap,
     }

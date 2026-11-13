@@ -74,14 +74,14 @@
 
 <div class="card mt">
   <div class="card-h"><h2>Round {{ r.number }} contributions</h2><span>{{ paid }} of {{ contributions|length }} paid</span></div>
-  <div class="table-wrap"><table class="t"><thead><tr><th>#</th><th>Member</th><th>Status</th><th>Paid</th><th>Receipt</th><th class="r">Late fee</th><th class="r">Amount</th><th></th></tr></thead><tbody>
+  <div class="table-wrap"><table class="t"><thead><tr><th>#</th><th>Member</th><th>Status</th><th>Paid</th><th>Receipt</th><th class="r">Amount</th><th></th></tr></thead><tbody>
   {% for c in contributions %}<tr>
     <td class="muted">{{ c.membership.position }}</td><td><a href="{% url 'console:equb_member' c.membership_id %}">{{ c.membership.user.full_name }}</a></td>
     <td>{% if c.overdue %}<span class="badge b-red">Overdue</span>{% else %}{{ c.status|status_badge }}{% endif %}{% if c.note %}<div class="small muted">{{ c.note }}</div>{% endif %}</td>
     <td class="small">{{ c.paid_at|date:"d M, H:i"|default:"—" }}</td><td class="mono small">{{ c.payment_record.reference|default:"—" }}</td>
-    <td class="r num">{% if c.fee %}{{ c.fee|money }}{% else %}—{% endif %}</td><td class="r num">{{ c.amount|money }}</td>
+    <td class="r num">{{ c.amount|money }}{% if c.catch_up_due %}<div class="small muted">catch-up · due {{ c.catch_up_due|date:"d M" }}</div>{% endif %}</td>
     <td class="r">{% if not c.is_settled %}<a class="btn ghost xs" href="{% url 'console:equb_member' c.membership_id %}#pay">Record payment</a>{% endif %}</td></tr>
-  {% empty %}<tr><td colspan="8" class="empty">No contributions for this round yet.</td></tr>{% endfor %}</tbody></table></div>
+  {% empty %}<tr><td colspan="7" class="empty">No contributions for this round yet.</td></tr>{% endfor %}</tbody></table></div>
 </div>
 
 {% if can_draw %}

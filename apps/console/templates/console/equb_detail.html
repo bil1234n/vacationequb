@@ -4,24 +4,24 @@
 {% block actions %}
   {% if g.status == 'OPEN' %}<form method="post" data-confirm="Start this Equb now with {{ g.members_count }} members? Rounds will be scheduled and members notified.">{% csrf_token %}<input type="hidden" name="action" value="start"><button class="btn gold">Start Equb</button></form>{% endif %}
   {% if current %}<a class="btn gold" href="{% url 'console:equb_plan' g.slug %}">Round {{ current.number }} draw →</a>{% elif g.status == 'ACTIVE' or g.status == 'COMPLETED' %}<a class="btn ghost" href="{% url 'console:equb_plan' g.slug %}">Rounds &amp; draws</a>
-  <form method="post">{% csrf_token %}<input type="hidden" name="action" value="sweep"><button class="btn ghost" title="Mark overdue contributions late, add late fees and notify members">Flag late payers</button></form>{% endif %}
+  <form method="post">{% csrf_token %}<input type="hidden" name="action" value="sweep"><button class="btn ghost" title="Mark overdue contributions late and notify members (no late fee is charged)">Flag late payers</button></form>{% endif %}
   <a class="btn ghost" href="{% url 'console:equb_edit' g.slug %}">Edit</a>
 {% endblock %}
 {% block content %}
 <div class="hero">
   <div><div class="muted small">{{ g.get_frequency_display }}{% if g.duration_label %} for {{ g.duration_label }}{% endif %} · {% if g.draw_type == 'MANUAL' %}Manual draw{% else %}Automatic draw{% endif %}</div><h2>{{ g.contribution_amount|money }} per member {{ g.frequency_days|every }}</h2>
     <div class="muted small">{{ g.start_date|date:"d M Y" }} → {{ g.end_date|date:"d M Y"|default:"—" }} · {{ g.max_members }} members{% if g.teams.exists %} · {{ g.teams.count }} Group Equb{{ g.teams.count|pluralize }}{% endif %}</div>
-    <div class="muted">Winners receive travel credit · {{ g.service_fee_percent.normalize }}% service fee · {% if g.late_fee %}late fee {{ g.late_fee|money }} after {{ g.grace_days }} days{% else %}{{ g.grace_days }} days' grace, no late fee{% endif %}</div>
+    <div class="muted">Winners receive travel credit · {{ g.service_fee_percent.normalize }}% service fee · {{ g.grace_days }} days' grace, no late fee{% if g.kyc_after_payments %} · eligibility form after {{ g.kyc_after_payments }} payment{{ g.kyc_after_payments|pluralize }}{% endif %}</div>
     <div style="margin-top:10px">Join code <span class="code-pill">{{ g.join_code }}</span></div></div>
   <div class="stats"><div><b>{{ g.members_count }}/{{ g.max_members }}</b><span>Members ({{ fill }}%)</span></div><div><b>{{ g.pot_per_round|compact }}</b><span>Pot / round (ETB)</span></div><div><b>{{ totals.total_collected|compact }}</b><span>Collected (ETB)</span></div><div><b>{{ totals.rounds_drawn }}/{{ g.total_rounds }}</b><span>Rounds drawn</span></div></div>
 </div>
 
 <div class="strip mt">
   <div><div class="label">Behind</div><div class="value {% if behind_count %}red{% endif %}">{{ behind_count }}</div><div class="sub">of {{ members_count }} members</div></div>
-  <div><div class="label">Arrears</div><div class="value {% if arrears %}red{% endif %}">{{ arrears|money }}</div><div class="sub">late fees included</div></div>
+  <div><div class="label">Arrears</div><div class="value {% if arrears %}red{% endif %}">{{ arrears|money }}</div><div class="sub">unpaid rounds past grace</div></div>
   <div><div class="label">Credit held</div><div class="value green">{{ credit|money }}</div><div class="sub">paid ahead by members</div></div>
   <div><div class="label">Payouts</div><div class="value">{{ totals.payouts_total|money }}</div><div class="sub">{{ totals.payouts_issued }} winner{{ totals.payouts_issued|pluralize }}</div></div>
-  <div><div class="label">Service fees</div><div class="value">{{ totals.service_fees|money }}</div><div class="sub">+ {{ totals.late_fees_collected|money }} late fees</div></div>
+  <div><div class="label">Service fees</div><div class="value">{{ totals.service_fees|money }}</div><div class="sub">kept from payouts</div></div>
 </div>
 
 <div class="tabs mt-l">

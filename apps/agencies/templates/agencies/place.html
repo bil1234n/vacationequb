@@ -1,0 +1,54 @@
+{% extends "agencies/base.html" %}{% load console_tags %}
+{% block title %}{{ m.display_name }} · {{ g.name }}{% endblock %}{% block heading %}{{ m.display_name }} · place #{{ m.position }}{% endblock %}
+{% block crumbs %}<a href="{% url 'agency:customer' customer.pk %}">{{ m.user.full_name }}</a> / <a href="{% url 'agency:equbs' %}">Equb</a> / {{ g.name }}{% endblock %}
+{% block actions %}<a class="btn ghost" href="{% url 'agency:customer' customer.pk %}">Back to customer</a>{% endblock %}
+{% block content %}
+{% if link %}<div class="msg success" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">Payment link for {{ link.amount|money }}:
+  <a class="btn sm" href="{{ link.url }}" target="_blank" rel="noopener">Open payment page</a>
+  <input class="mono" style="flex:1;min-width:260px" readonly value="{{ link.url }}" onclick="this.select()"></div>{% endif %}
+
+<div class="strip">
+  <div><div class="label">Status</div><div class="value">{{ m.status|status_badge }}{% if m.has_won %} 🏆{% endif %}</div><div class="sub">{{ s.status_label }}</div></div>
+  <div><div class="label">Owes now</div><div class="value {% if s.arrears %}red{% endif %}">{{ s.owes|money }}</div><div class="sub">{% if s.missed_rounds %}{{ s.missed_rounds }} round{{ s.missed_rounds|pluralize }} late{% else %}no late rounds{% endif %}</div></div>
+  <div><div class="label">Paid</div><div class="value">{{ m.total_paid|money }}</div><div class="sub">{{ s.paid_rounds }} of {{ s.total_rounds }} rounds</div></div>
+  <div><div class="label">Credit</div><div class="value">{{ m.prepaid_credit|money }}</div><div class="sub">used for the next rounds</div></div>
+  <div><div class="label">Still to pay</div><div class="value">{{ s.remaining_amount|money }}</div><div class="sub">{{ g.contribution_amount|money }} {{ g.frequency_days|every }}</div></div>
+</div>
+
+<div class="grid g-21 mt" style="align-items:start">
+  <div class="card">
+    <div class="card-h"><h2>Rounds</h2><span>{% if g.status == 'OPEN' %}Starts {{ g.start_date|date:"d M Y" }} – money paid now is kept as credit{% else %}Round {{ g.current_round }} of {{ s.total_rounds }}{% endif %}</span></div>
+    <div class="table-wrap"><table class="t"><thead><tr><th>Round</th><th>Due</th><th>Status</th><th>Paid on</th><th class="r">Amount</th></tr></thead><tbody>
+    {% for row in schedule %}<tr class="{% if row.state == 'overdue' %}critical{% endif %}"><td class="strong">R{{ row.round }}{% if row.you_won %} 🏆{% endif %}</td>
+      <td class="small">{{ row.due_date }}</td><td>{{ row.state|schedule_badge }}{% if row.catch_up %}<div class="small muted">catch-up round</div>{% endif %}</td>
+      <td class="small">{{ row.paid_at|slice:":10"|default:"—" }}</td><td class="r num">{{ row.amount|money }}</td></tr>
+    {% empty %}<tr><td colspan="5" class="empty">The rounds appear when the Equb starts.</td></tr>{% endfor %}</tbody></table></div>
+  </div>
+  <div>
+    <div class="card">
+      <div class="card-h"><h2>Record a payment</h2></div>
+      {% if plan.options %}
+      <p class="small muted" style="margin-top:0">Money you received from the customer (cash, bank or mobile money). It pays the oldest unpaid round first; anything extra is kept as credit. There is never a late fee.</p>
+      <form method="post">{% csrf_token %}<input type="hidden" name="action" value="record">
+        <div class="field"><label for="rounds">Rounds paid</label>
+          <select id="rounds" name="rounds">{% for o in plan.options %}<option value="{{ o.rounds }}">{{ o.rounds }} round{{ o.rounds|pluralize }} (R{{ o.from_round }}{% if o.to_round != o.from_round %}–R{{ o.to_round }}{% endif %}) · {{ o.amount|money }}</option>{% endfor %}</select></div>
+        <div class="field"><label for="amount">…or another amount (ETB)</label><input id="amount" type="text" name="amount" inputmode="decimal" placeholder="Leave empty to use the rounds above"></div>
+        <div class="field"><label for="method">Paid by</label><select id="method" name="method">{% for k, v in methods %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</select></div>
+        <div class="field"><label for="reference">Transfer reference</label><input id="reference" type="text" name="reference" maxlength="64" placeholder="Needed for bank and mobile money"></div>
+        <div class="field"><label for="note">Note</label><input id="note" type="text" name="note" maxlength="200" placeholder="Optional"></div>
+        <button class="btn" style="width:100%">Record payment</button>
+      </form>
+      <form method="post" style="margin-top:10px">{% csrf_token %}<input type="hidden" name="action" value="link">
+        <input type="hidden" name="rounds" value="{{ plan.options.0.rounds }}">
+        <button class="btn ghost" style="width:100%">Or create an online payment link ({{ plan.options.0.amount|money }})</button></form>
+      {% else %}<div class="empty">{{ plan.reason|default:"Nothing to pay right now – every round is paid." }}</div>{% endif %}
+    </div>
+    <div class="card mt">
+      <div class="card-h"><h2>Payments</h2></div>
+      <div class="table-wrap"><table class="t"><tbody>
+      {% for p in payments %}<tr><td><div class="strong num">{{ p.amount|money }}</div><div class="small muted" style="white-space:nowrap">{{ p.created_at|date:"d M Y, H:i" }} · {{ p.get_method_display }}</div><div class="mono small muted">{{ p.reference }}</div></td><td class="r">{{ p.status|status_badge }}</td></tr>
+      {% empty %}<tr><td class="empty">No payments yet.</td></tr>{% endfor %}</tbody></table></div>
+    </div>
+  </div>
+</div>
+{% endblock %}

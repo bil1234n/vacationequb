@@ -1,10 +1,10 @@
 """
 Community Finance & Impact – two separate, Shariah-compliant systems:
 
-1. **Crowdfunding Hub (Sadaqah / Hibah)** – people give voluntarily to help a community member reach Umrah, Hajj
-   or another travel goal. The gift goes 100% to the cause; Vacation Equb's platform fee is a separate, explicit amount
+1. **Crowdfunding Hub (donations)** – people give voluntarily to help a community member reach Umrah, Hajj
+   or another travel goal. The gift goes 100% to the cause; EthioVacation's platform fee is a separate, explicit amount
    added on top at checkout (100 ETB gift + 5% fee = 105 ETB paid). Giving never earns a ticket or a prize.
-2. **Community Giveaways** – promotional trips paid for entirely by Vacation Equb's marketing budget or a sponsor.
+2. **Community Giveaways** – promotional trips paid for entirely by EthioVacation's marketing budget or a sponsor.
    Entry is free: every N friends you invite who register (10 by default) earns one entry. Nobody pays to enter,
    so there is no stake and no Maysir. Winners are picked with the provably-fair draw in ``apps.core.fairness``.
 
@@ -37,7 +37,7 @@ def _counter_safe_save(obj, counters, args, kwargs):
     return args, kwargs
 
 
-# =========================================================================== 1. Crowdfunding (Sadaqah / Hibah)
+# =========================================================================== 1. Crowdfunding (donations)
 class CampaignQuerySet(models.QuerySet):
     def live(self):
         now = timezone.now()
@@ -68,7 +68,7 @@ class CrowdfundingCampaign(TimeStampedModel):
     image_url = models.URLField(blank=True)
     beneficiary_name = models.CharField(max_length=150, help_text="Who receives the money (shown to donors)")
     beneficiary = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
-                                    related_name="crowdfunding_campaigns", help_text="Their Vacation Equb account, if any")
+                                    related_name="crowdfunding_campaigns", help_text="Their EthioVacation account, if any")
     goal_amount = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(1)])
     platform_fee_percent = models.DecimalField(
         max_digits=4, decimal_places=2, default=Decimal("5"), validators=[MinValueValidator(0), MaxValueValidator(20)],
@@ -125,8 +125,7 @@ class CrowdfundingCampaign(TimeStampedModel):
 
 class Donation(TimeStampedModel):
     class Kind(models.TextChoices):
-        SADAQAH = "SADAQAH", "Sadaqah (charity)"
-        HIBAH = "HIBAH", "Hibah (gift)"
+        DONATION = "DONATION", "Donation"
 
     class Status(models.TextChoices):
         PENDING = "PENDING", "Pending payment"
@@ -135,7 +134,7 @@ class Donation(TimeStampedModel):
 
     campaign = models.ForeignKey(CrowdfundingCampaign, on_delete=models.PROTECT, related_name="donations")
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="donations")
-    kind = models.CharField(max_length=8, choices=Kind.choices, default=Kind.SADAQAH)
+    kind = models.CharField(max_length=8, choices=Kind.choices, default=Kind.DONATION)
     amount = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(1)],
                                  help_text="The gift – goes 100% to the campaign")
     fee_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0, help_text="Platform fee, added on top")
@@ -179,7 +178,7 @@ class GiveawayQuerySet(models.QuerySet):
 
 
 class Giveaway(TimeStampedModel):
-    """A promotional trip paid by Vacation Equb or a sponsor. Entries are free – earned only by inviting friends."""
+    """A promotional trip paid by EthioVacation or a sponsor. Entries are free – earned only by inviting friends."""
 
     class Status(models.TextChoices):
         SCHEDULED = "SCHEDULED", "Scheduled"
@@ -194,7 +193,7 @@ class Giveaway(TimeStampedModel):
         EQUB_CONTRIBUTION = "EQUB_CONTRIBUTION", "Paid Equb contributions"
 
     class SponsorType(models.TextChoices):
-        COMPANY = "COMPANY", "Vacation Equb marketing budget"
+        COMPANY = "COMPANY", "EthioVacation marketing budget"
         CORPORATE = "CORPORATE", "Corporate sponsor"
 
     title = models.CharField(max_length=120)
@@ -203,7 +202,7 @@ class Giveaway(TimeStampedModel):
     image_url = models.URLField(blank=True)
 
     sponsor_type = models.CharField(max_length=10, choices=SponsorType.choices, default=SponsorType.COMPANY)
-    sponsor_name = models.CharField(max_length=120, default="Vacation Equb")
+    sponsor_name = models.CharField(max_length=120, default="EthioVacation")
     sponsor_note = models.CharField(max_length=255, blank=True, help_text="e.g. 'Fully paid by Awash Bank'")
     sponsor_logo_url = models.URLField(blank=True)
 

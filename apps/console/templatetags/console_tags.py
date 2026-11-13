@@ -256,3 +256,11 @@ def terms_html(text):
     from apps.equb.terms import to_html
 
     return mark_safe(to_html(text or ""))
+
+
+@register.simple_tag
+def kyc_count():
+    """Sidebar badge: eligibility forms waiting for a staff check."""
+    from apps.equb.models import MemberKYC
+
+    return MemberKYC.objects.filter(status=MemberKYC.Status.SUBMITTED).count()

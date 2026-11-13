@@ -7,12 +7,12 @@ from contextvars import ContextVar
 
 from django.conf import settings
 
-_request_base: ContextVar[str | None] = ContextVar("vacation_request_base", default=None)
+_request_base: ContextVar[str | None] = ContextVar("ethiovacation_request_base", default=None)
 
 
 def public_base_url() -> str:
     """Base URL clients can reach: the current request's origin, else PUBLIC_BASE_URL."""
-    return (_request_base.get() or settings.VACATION["PUBLIC_BASE_URL"]).rstrip("/")
+    return (_request_base.get() or settings.ETHIOVACATION["PUBLIC_BASE_URL"]).rstrip("/")
 
 
 class RequestBaseURLMiddleware:

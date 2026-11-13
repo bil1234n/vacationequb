@@ -31,7 +31,7 @@ def _provider() -> str:
     chapa = (getattr(settings, "PAYMENT_GATEWAYS", {}) or {}).get("chapa", {}) or {}
     if chapa.get("SECRET_KEY"):
         return "chapa"
-    return "mock" if settings.VACATION.get("ENABLE_MOCK_GATEWAY") else "chapa"
+    return "mock" if settings.ETHIOVACATION.get("ENABLE_MOCK_GATEWAY") else "chapa"
 
 
 def refresh_status(sp: ScheduledPayment) -> ScheduledPayment:

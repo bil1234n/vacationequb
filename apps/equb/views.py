@@ -20,7 +20,7 @@ from .models import (Contribution, EqubGroup, EqubMembership, EqubPackage, EqubP
 from .serializers import (ContributionSerializer, DependentSerializer, GroupEqubCreateSerializer, InviteIdSerializer, InvitePhoneSerializer, RemoveMemberSerializer, EqubGroupDetailSerializer, EqubGroupListSerializer,
                           EqubGroupWriteSerializer, EqubPaymentSerializer, EqubPayoutSerializer, EqubRoundSerializer,
                           ExitRequestSerializer, JoinByCodeSerializer, MemberPaySerializer, MembershipSerializer,
-                          RedeemSerializer, ScheduledPaymentCreateSerializer, rules_summary, terms_document,
+                          RedeemSerializer, ScheduledPaymentCreateSerializer, terms_document,
                           terms_lines)
 
 
@@ -217,6 +217,7 @@ def membership_detail(m: EqubMembership, request) -> dict:
         services.reopen_if_short(m.group)  # finished before everyone paid the full price per person
         m.refresh_from_db()
         m.group.refresh_from_db()
+    services.bill_missed_rounds(m.group)  # rounds that ran before this member joined are billed too
     scheduled.dispatch_due(membership=m)  # calendar payments whose time has come (if the scheduler hasn't run)
     services.expire_pending_payments(membership=m)  # unfinished payments past the time limit
     rules = EqubSettings.load()
@@ -232,7 +233,7 @@ def membership_detail(m: EqubMembership, request) -> dict:
                         "odds_percent": pool["odds_percent"],
                         "me": {"eligible": entry["eligible"], "reasons": entry["reasons"]} if entry else None}
     group_data = EqubGroupListSerializer(g).data
-    group_data.update({"late_fee": str(g.late_fee), "grace_days": g.grace_days, "service_fee_percent": str(g.service_fee_percent),
+    group_data.update({"grace_days": g.grace_days, "kyc_after_payments": g.kyc_after_payments, "service_fee_percent": str(g.service_fee_percent),
                        "require_paid_to_draw": g.require_paid_to_draw, "payout_basis": g.payout_basis,
                        "package_name": g.equb_package.name if g.equb_package_id else None, "join_code": g.join_code,
                        "winners_per_round": g.winners_per_round, "terms_content": terms_lines(g),
@@ -248,7 +249,8 @@ def membership_detail(m: EqubMembership, request) -> dict:
         "payout": EqubPayoutSerializer(payout).data if payout else None, "current_round": current_data,
         "rules": {"warn_at": rules.warn_at, "block_at": rules.block_at, "suspend_at": rules.suspend_at,
                   "min_paid_rounds_to_win": rules.min_paid_rounds_to_win, "max_advance_rounds": rules.max_advance_rounds},
-        "rules_summary": rules_summary(g, rules),
+        "rules_summary": terms_lines(g),
+        "kyc": services.kyc_prompt(m, st) if m.user_id == request.user.id else None,
     }
 
 
@@ -279,6 +281,20 @@ class MembershipViewSet(viewsets.ReadOnlyModelViewSet):
 
     def retrieve(self, request, *args, **kwargs):
         return Response(membership_detail(self.get_object(), request))
+
+    @action(detail=False, methods=["get", "post"], url_path="eligibility-form")
+    def eligibility_form(self, request):
+        """
+        ``GET`` my eligibility form status · ``POST`` send it (multipart or JSON with base64 images):
+        ``photo``, ``id_front``, optional ``id_back``, ``monthly_income``, optional ``national_id_number``,
+        ``income_source``. Needed to enter draws once an Equb's required number of payments is reached.
+        """
+        from . import kyc as kyc_mod
+
+        if request.method == "POST":
+            k = kyc_mod.submit(request.user, request.data, request.FILES)
+            return Response(kyc_mod.public(k), status=status.HTTP_201_CREATED)
+        return Response(kyc_mod.public(kyc_mod.for_user(request.user)))
 
     @action(detail=False, methods=["get"])
     def contributions(self, request):
@@ -424,7 +440,7 @@ class GroupEqubViewSet(viewsets.GenericViewSet):
 
     @action(detail=False, methods=["get"], url_path="lookup-phone")
     def lookup_phone(self, request):
-        """Is this full phone number a Vacation Equb customer? ``?phone=+251912345678`` (``&team=<id>`` to check that group)."""
+        """Is this full phone number a EthioVacation customer? ``?phone=+251912345678`` (``&team=<id>`` to check that group)."""
         team = None
         if request.query_params.get("team"):
             team = self.get_queryset().filter(pk=request.query_params["team"]).first()

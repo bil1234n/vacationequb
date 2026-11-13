@@ -7,11 +7,11 @@
 <div class="grid g-4">
   <div class="card kpi dark"><div class="label">Sales this month</div><div class="value">{{ month.gross|compact }} <small style="font-size:14px">ETB</small></div><div class="sub">{{ month.sales }} sale{{ month.sales|pluralize }}</div></div>
   <div class="card kpi"><div class="label">Your share this month</div><div class="value">{{ month.share|compact }} <small style="font-size:14px">ETB</small></div><div class="sub">after {{ month.commission|money }} platform fee</div></div>
-  <div class="card kpi gold"><div class="label">Owed to you</div><div class="value">{{ total.owed|compact }} <small style="font-size:14px">ETB</small></div><div class="sub">paid out by Vacation Equb</div></div>
+  <div class="card kpi gold"><div class="label">Owed to you</div><div class="value">{{ total.owed|compact }} <small style="font-size:14px">ETB</small></div><div class="sub">paid out by EthioVacation</div></div>
   <div class="card kpi"><div class="label">Customers</div><div class="value">{{ counts.customers }}</div><div class="sub">{{ counts.family }} family member{{ counts.family|pluralize }} · {{ counts.equb }} Equb place{{ counts.equb|pluralize }}</div></div>
 </div>
 
-{% if not agency.chapa_subaccount_id %}<div class="note-box mt">Your bank account is not linked to Chapa yet, so your share of each sale is collected by Vacation Equb and paid out to you. Once it is linked, Chapa sends your share straight to your bank at every payment. <a href="{% url 'agency:profile' %}">See your payout details →</a></div>{% endif %}
+{% if not agency.chapa_subaccount_id %}<div class="note-box mt">Your bank account is not linked to Chapa yet, so your share of each sale is collected by EthioVacation and paid out to you. Once it is linked, Chapa sends your share straight to your bank at every payment. <a href="{% url 'agency:profile' %}">See your payout details →</a></div>{% endif %}
 
 <div class="grid g-2 mt">
   <div class="card"><div class="card-h"><h2>Waiting for payment</h2><a class="small" href="{% url 'agency:bookings' %}?status=PENDING_PAYMENT">All →</a></div>

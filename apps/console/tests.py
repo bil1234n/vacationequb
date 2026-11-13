@@ -14,7 +14,7 @@ from apps.luckydraw.models import CrowdfundingCampaign, Giveaway
 
 class ConsoleTests(TestCase):
     def setUp(self):
-        self.staff = make_user("vacation Admin", staff=True)
+        self.staff = make_user("EthioVacation Admin", staff=True)
         self.staff.set_password("pass12345")
         self.staff.save()
         self.customer = make_user("Abebe Kebede")
@@ -71,7 +71,7 @@ class ConsoleTests(TestCase):
         self.assertContains(r, "cancelled")
         r = self.client.post(reverse("console:giveaway", args=[self.camp.slug]), {"action": "draw"}, follow=True)
         self.assertContains(r, "Nobody has earned an entry yet")
-        r = self.client.post(reverse("console:profile"), {"form": "profile", "full_name": "Bilal Admin", "email": "b@vacation.et"}, follow=True)
+        r = self.client.post(reverse("console:profile"), {"form": "profile", "full_name": "Bilal Admin", "email": "b@ethiovacation.et"}, follow=True)
         self.staff.refresh_from_db()
         self.assertEqual(self.staff.full_name, "Bilal Admin")
         r = self.client.post(reverse("console:profile"), {"form": "password", "old_password": "pass12345",
@@ -167,7 +167,7 @@ class ConsoleManageTests(TestCase):
         self.assertContains(r, "more draws than members")
 
         base = {"title": "Umrah Giveaway", "prize_type": "TRAVEL_PACKAGE", "prize_title": "Umrah", "prize_value": "160000",
-                "number_of_winners": "1", "referrals_per_entry": "10", "sponsor_type": "COMPANY", "sponsor_name": "vacation Travel",
+                "number_of_winners": "1", "referrals_per_entry": "10", "sponsor_type": "COMPANY", "sponsor_name": "EthioVacation",
                 "starts_at": "2030-01-01T10:00", "ends_at": "2030-01-10T10:00", "draw_at": "2030-01-10T11:00", "status": "LIVE"}
         r = self.client.post(reverse("console:giveaway_add"), base)
         self.assertContains(r, "Choose the package the winner travels on")
@@ -271,7 +271,7 @@ class ConsoleEqubOperationsTests(TestCase):
         r = self.client.post(url, {"action": "record_payment", "method": "cash", "rounds": "1", "notify": "1"}, follow=True)
         self.assertContains(r, "paid round 1")
         rec = EqubPayment.objects.get(membership=self.m[0])
-        self.assertEqual(rec.amount, Decimal("1050.00"))
+        self.assertEqual(rec.amount, Decimal("1000.00"))
         self.assertEqual(Contribution.objects.get(membership=self.m[0]).status, "PAID")
         r = self.client.post(url, {"action": "log_call", "outcome": "PROMISED", "promised_date": "", "feedback": "x"}, follow=True)
         self.assertContains(r, "Enter the date the member promised to pay")
@@ -279,7 +279,7 @@ class ConsoleEqubOperationsTests(TestCase):
         self.client.post(url1, {"action": "terminate", "reason": "NON_PAYMENT", "note": "No answer for weeks"})
         self.m[1].refresh_from_db()
         self.assertEqual(self.m[1].status, "DEFAULTED")
-        self.assertEqual(Termination.objects.get().arrears_at_termination, Decimal("1050.00"))
+        self.assertEqual(Termination.objects.get().arrears_at_termination, Decimal("1000.00"))
         self.client.post(url1, {"action": "reinstate"})
         self.m[1].refresh_from_db()
         self.assertEqual(self.m[1].status, "ACTIVE")

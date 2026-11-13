@@ -67,7 +67,7 @@ class AccountDeletionTests(TestCase):
         self.assertFalse(self.user.has_usable_password())
         self.assertEqual(self.login().status_code, 401)
         # the number can register again
-        res = self.api.post("/api/auth/register/", {"phone": PHONE, "full_name": "New Person", "password": "another-pass-9"},
+        res = self.api.post("/api/auth/register/", {"phone": PHONE, "full_name": "New Person", "password": "583920"},
                             format="json")
         self.assertEqual(res.status_code, 201)
 
@@ -96,3 +96,34 @@ class AccountDeletionTests(TestCase):
 
     def test_privacy_page(self):
         self.assertContains(self.client.get("/privacy/"), "Privacy policy")
+
+
+class PinSignInTests(TestCase):
+    def setUp(self):
+        self.api = APIClient()
+
+    def test_register_needs_a_six_digit_pin_and_check_phone(self):
+        bad = self.api.post("/api/auth/register/", {"phone": "0911555001", "full_name": "Pin User", "password": "abc123"},
+                            format="json")
+        self.assertEqual(bad.status_code, 400)
+        weak = self.api.post("/api/auth/register/", {"phone": "0911555001", "full_name": "Pin User", "password": "111111"},
+                             format="json")
+        self.assertEqual(weak.status_code, 400)
+        ok = self.api.post("/api/auth/register/", {"phone": "0911555001", "full_name": "Pin User", "password": "482915"},
+                           format="json")
+        self.assertEqual(ok.status_code, 201, ok.data)
+        r = self.api.post("/api/auth/check-phone/", {"phone": "0911555001"}, format="json").data
+        self.assertEqual((r["exists"], r["has_pin"], r["first_name"]), (True, True, "Pin"))
+        r = self.api.post("/api/auth/login/", {"phone": "0911555001", "password": "482915"}, format="json")
+        self.assertEqual(r.status_code, 200)
+        self.assertFalse(r.data["needs_pin"])
+
+    def test_old_password_account_sets_a_pin(self):
+        User.objects.create_user("0911555002", "old-password", full_name="Old User")
+        self.assertFalse(self.api.post("/api/auth/check-phone/", {"phone": "0911555002"}, format="json").data["has_pin"])
+        r = self.api.post("/api/auth/login/", {"phone": "0911555002", "password": "old-password"}, format="json")
+        self.assertTrue(r.data["needs_pin"])
+        self.api.credentials(HTTP_AUTHORIZATION=f"Bearer {r.data['access']}")
+        r = self.api.post("/api/auth/set-pin/", {"current": "old-password", "pin": "739164"}, format="json")
+        self.assertEqual(r.status_code, 200, r.data)
+        self.assertTrue(User.objects.get(phone="+251911555002").check_password("739164"))

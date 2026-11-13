@@ -1,0 +1,21 @@
+{% extends "console/base.html" %}{% load console_tags %}
+{% block title %}Eligibility forms{% endblock %}{% block heading %}Draw eligibility forms{% endblock %}{% block crumbs %}Equb · Members{% endblock %}
+{% block content %}
+<div class="tabs">
+  {% for code, label in tabs %}<a href="?tab={{ code }}" class="{% if tab == code %}on{% endif %}">{{ label }} <span class="count {% if code == 'SUBMITTED' and counts.SUBMITTED %}alert{% endif %}">{% for k, v in counts.items %}{% if k == code %}{{ v }}{% endif %}{% endfor %}</span></a>{% endfor %}
+</div>
+<div class="note-box">After the number of payments set on each Equb, members send a photo of themselves, their national ID and their monthly income.
+  A sent form lets them enter draws straight away. <b>Reject</b> it (with a note) if something is wrong – they are left out of draws until they send it again.</div>
+<div class="card mt"><div class="table-wrap"><table class="t">
+  <thead><tr><th>Sent</th><th>Member</th><th>National ID no.</th><th class="r">Monthly income</th><th>Source</th><th>Status</th><th></th></tr></thead>
+  <tbody>{% for k in page %}<tr>
+    <td class="small">{{ k.updated_at|date:"d M Y H:i" }}<div class="muted">{{ k.updated_at|timesince }} ago</div></td>
+    <td><a class="strong" href="{% url 'console:user' k.user_id %}">{{ k.user.full_name }}</a><div class="small">{{ k.user.phone|tel }}</div></td>
+    <td class="mono small">{{ k.national_id_number|default:"—" }}</td>
+    <td class="r num">{{ k.monthly_income|money }}</td>
+    <td class="small">{{ k.income_source|default:"—" }}</td>
+    <td>{% if k.status == 'APPROVED' %}<span class="badge b-green">Approved</span>{% elif k.status == 'REJECTED' %}<span class="badge b-red">Rejected</span>{% else %}<span class="badge b-gold">Waiting</span>{% endif %}</td>
+    <td class="r"><a class="btn sm {% if k.status != 'SUBMITTED' %}ghost{% endif %}" href="{% url 'console:kyc_detail' k.pk %}">{% if k.status == 'SUBMITTED' %}Review{% else %}Open{% endif %}</a></td></tr>
+  {% empty %}<tr><td colspan="7" class="empty">No forms here.</td></tr>{% endfor %}</tbody>
+</table></div>{% include "console/_pagination.html" %}</div>
+{% endblock %}

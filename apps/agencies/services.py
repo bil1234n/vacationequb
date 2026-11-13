@@ -9,7 +9,7 @@ from django.db import IntegrityError, transaction
 from django.db.models import Q, Sum
 from django.utils import timezone
 
-from apps.accounts.models import User, normalize_phone, validate_phone
+from apps.accounts.models import User, normalize_phone, validate_phone, validate_pin
 from apps.core.exceptions import BusinessRuleError
 
 from .models import Agency, AgencyCustomer, AgencyLedgerEntry, AgencyStaff, FamilyMember
@@ -149,17 +149,14 @@ def add_staff(agency: Agency, *, full_name: str, phone: str, password: str = "",
               email: str = "") -> AgencyStaff:
     user, created = _user_for(phone, full_name, email)
     if user.is_staff:
-        raise BusinessRuleError("This phone belongs to a Vacation Equb staff account.")
+        raise BusinessRuleError("This phone belongs to a EthioVacation staff account.")
     existing = AgencyStaff.objects.filter(user=user).select_related("agency").first()
     if existing and existing.agency_id != agency.id:
         raise BusinessRuleError(f"{user.full_name} already works for {existing.agency.name}.")
     if AgencyCustomer.objects.filter(user=user).exclude(agency=agency).exists():
         raise BusinessRuleError(f"{user.full_name} is a customer of another agency.")
     if password:
-        if len(password) < 6:
-            raise BusinessRuleError("The password needs at least 6 characters.")
-        user.set_password(password)
-        user.save(update_fields=["password"])
+        _set_pin(user, password)
     if existing:
         existing.role, existing.is_active = role, True
         existing.save(update_fields=["role", "is_active", "updated_at"])
@@ -173,7 +170,7 @@ def add_customer(agency: Agency, *, full_name: str, phone: str, email: str = "",
                  notes: str = "", added_by=None) -> tuple[AgencyCustomer, bool]:
     """Register a new customer (or link an existing app user who isn't with another agency)."""
     if not agency.is_active:
-        raise BusinessRuleError("Your agency is not active yet. Contact Vacation Equb.")
+        raise BusinessRuleError("Your agency is not active yet. Contact EthioVacation.")
     user, created = _user_for(phone, full_name, email)
     if user.is_staff or AgencyStaff.objects.filter(user=user).exists():
         raise BusinessRuleError("This phone number belongs to a staff account.")
@@ -183,22 +180,27 @@ def add_customer(agency: Agency, *, full_name: str, phone: str, email: str = "",
             raise BusinessRuleError(f"{user.full_name} is already one of your customers.")
         raise BusinessRuleError(f"{user.full_name} is already registered with another agency.")
     if password:
-        if len(password) < 6:
-            raise BusinessRuleError("The password needs at least 6 characters.")
         if not created and user.has_usable_password():
-            raise BusinessRuleError("This customer already has an app password; they can sign in with it.")
-        user.set_password(password)
-        user.save(update_fields=["password"])
+            raise BusinessRuleError("This customer already has an app PIN; they can sign in with it.")
+        _set_pin(user, password)
     return AgencyCustomer.objects.create(agency=agency, user=user, added_by=added_by, notes=notes), created
+
+
+def _set_pin(user: User, pin: str):
+    """App and portal sign-in uses a 6-digit PIN."""
+    try:
+        validate_pin(pin)
+    except Exception as exc:  # noqa: BLE001 – Django ValidationError
+        raise BusinessRuleError(exc.messages[0]) from exc
+    user.set_password(pin)
+    user.pin_set = True
+    user.save(update_fields=["password", "pin_set"])
 
 
 def set_customer_password(customer: AgencyCustomer, password: str):
     if customer.user.has_usable_password():
-        raise BusinessRuleError("This customer already set their own password.")
-    if len(password or "") < 6:
-        raise BusinessRuleError("The password needs at least 6 characters.")
-    customer.user.set_password(password)
-    customer.user.save(update_fields=["password"])
+        raise BusinessRuleError("This customer already set their own PIN.")
+    _set_pin(customer.user, password)
 
 
 def search_customers(agency: Agency, q: str = ""):
@@ -222,6 +224,40 @@ def enrol(customer: AgencyCustomer, group, *, family_member: FamilyMember | None
         return join_group(customer.user, group, dependent={"name": family_member.full_name,
                                                            "phone": family_member.phone})
     return join_group(customer.user, group)
+
+
+def customer_place(agency: Agency, membership_id) -> "EqubMembership":
+    """An Equb place held by (or paid for by) one of this agency's customers."""
+    from apps.equb.models import EqubMembership
+
+    m = (EqubMembership.objects.select_related("group", "user").filter(pk=membership_id, user__agency_link__agency=agency)
+         .first())
+    if not m:
+        raise BusinessRuleError("That Equb place does not belong to one of your customers.")
+    return m
+
+
+def record_equb_payment(agency: Agency, staff_user, membership_id, *, method: str, rounds: int | None = None,
+                        amount=None, reference: str = "", note: str = ""):
+    """
+    The agency took the customer's Equb money (cash, bank transfer, mobile money). It is recorded on the customer's
+    place straight away – oldest unpaid round first; before the Equb starts it is kept as credit for the first rounds.
+    """
+    from apps.equb.services import record_office_payment
+
+    if not agency.is_active:
+        raise BusinessRuleError("Your agency is not active yet. Contact EthioVacation.")
+    m = customer_place(agency, membership_id)
+    return record_office_payment(m, staff_user, method=method, rounds=rounds, amount=amount, reference=reference,
+                                 note=(f"Collected by {agency.name}" + (f" – {note.strip()}" if note.strip() else ""))[:255])
+
+
+def equb_checkout(agency: Agency, membership_id, rounds: int):
+    """A Chapa / telebirr payment link for the customer's Equb place (the customer pays it themselves)."""
+    from apps.equb.services import start_member_payment
+
+    m = customer_place(agency, membership_id)
+    return start_member_payment(m.user, m, rounds, provider=None, payer_phone=m.user.phone)
 
 
 # --------------------------------------------------------------------------- bookings
@@ -253,7 +289,7 @@ def start_checkout(booking, *, provider: str | None = None):
     if booking.total_amount <= 0:
         raise BusinessRuleError("Nothing to pay on this booking.")
     provider = provider or ("chapa" if settings.PAYMENT_GATEWAYS.get("chapa", {}).get("SECRET_KEY")
-                            else settings.VACATION["DEFAULT_PAYMENT_PROVIDER"])
+                            else settings.ETHIOVACATION["DEFAULT_PAYMENT_PROVIDER"])
     return initiate_payment(user=booking.user, target=booking, amount=booking.total_amount,
                             purpose=PaymentTransaction.Purpose.BOOKING, provider=provider,
                             payer_phone=booking.contact_phone)

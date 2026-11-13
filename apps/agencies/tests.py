@@ -7,6 +7,7 @@ from decimal import Decimal
 from unittest import mock
 
 from django.test import TestCase, override_settings
+from rest_framework.test import APIClient
 from django.utils import timezone
 
 from apps.core.testutils import make_equb, make_flight, make_package, make_user
@@ -102,7 +103,7 @@ class AgencyFlowTests(TestCase):
         self.pkg = make_package(price=100000)
 
     def _add_customer(self, phone="0912345678", name="Hawa Mohammed"):
-        r = self.client.post("/agency/customers/new/", {"full_name": name, "phone": phone, "password": "secret12"})
+        r = self.client.post("/agency/customers/new/", {"full_name": name, "phone": phone, "password": "482915"})
         self.assertEqual(r.status_code, 302, getattr(r, "context", None) and r.context.get("form").errors)
         return AgencyCustomer.objects.get(user__phone="+251" + phone[1:])
 
@@ -115,7 +116,7 @@ class AgencyFlowTests(TestCase):
 
     def test_customer_family_equb_booking_and_chapa_split(self):
         cust = self._add_customer()
-        self.assertTrue(cust.user.check_password("secret12"))
+        self.assertTrue(cust.user.check_password("482915"))
         r = self.client.post(f"/agency/customers/{cust.pk}/family/new/", {
             "first_name": "Amina", "last_name": "Ali", "relation": "CHILD", "gender": "F", "date_of_birth": "2018-05-01"})
         self.assertEqual(r.status_code, 302)
@@ -260,16 +261,58 @@ class ConsoleAgencyAdminTests(TestCase):
             self.assertContains(r, "Commercial Bank of Ethiopia")
             r = self.client.post("/console/agencies/new/", {
                 "name": "Habesha Tours", "phone": "0911223300", "city": "Addis Ababa", "commission_percent": "5",
-                "status": "ACTIVE", "owner_name": "Selam Tadesse", "owner_phone": "0911223301", "owner_password": "owner123",
+                "status": "ACTIVE", "owner_name": "Selam Tadesse", "owner_phone": "0911223301", "owner_password": "739164",
                 "bank_code": "946", "account_name": "Habesha Tours PLC", "account_number": "1000123456789"})
             self.assertEqual(r.status_code, 302, r.context and r.context["form"].errors)
             a = Agency.objects.get(name="Habesha Tours")
             self.assertEqual(a.bank_name, "Commercial Bank of Ethiopia (CBE)")
             owner = a.staff.get().user
-            self.assertTrue(owner.check_password("owner123"))
+            self.assertTrue(owner.check_password("739164"))
             self.client.post(f"/console/agencies/{a.pk}/", {"action": "subaccount"})
         a.refresh_from_db()
         self.assertEqual(a.chapa_subaccount_id, "ACCT-777")
         sent = next(c for c in calls if c["url"].endswith("/subaccount"))["json"]
         self.assertEqual((sent["bank_code"], sent["split_type"], sent["split_value"]), (946, "percentage", 0.05))
         self.assertEqual(self.client.get(f"/console/agencies/{a.pk}/edit/").status_code, 200)
+
+
+class AgencyAppAndEqubPaymentTests(TestCase):
+    """Agency staff use their own app (API) and record the Equb money they collect from customers."""
+
+    def setUp(self):
+        self.agency, self.owner = make_agency()
+        self.api = APIClient()
+        self.api.force_authenticate(self.owner)
+
+    def test_agency_app_flow_and_payment_before_and_after_start(self):
+        from apps.equb import services as equb
+        from apps.equb.models import EqubMembership
+
+        me = self.api.get("/api/auth/me/").data
+        self.assertEqual(me["agency"]["name"], self.agency.name)
+        r = self.api.post("/api/agency/customers/", {"full_name": "Hawa Mohammed", "phone": "0912345678",
+                                                    "pin": "482915"}, format="json")
+        self.assertEqual(r.status_code, 201, r.data)
+        cid = r.data["id"]
+        g = make_equb(name="Umrah 2027", contribution_amount=Decimal("1000"), frequency_days=30, max_members=5,
+                      duration_value=5, duration_unit="MONTHS", start_date=timezone.localdate())
+        r = self.api.post(f"/api/agency/customers/{cid}/enrol/", {"group": g.slug}, format="json")
+        self.assertEqual(r.status_code, 201, r.data)
+        mid = r.data["membership_id"]
+        # the Equb has not started: the money is kept as credit
+        r = self.api.post(f"/api/agency/places/{mid}/pay/", {"method": "cash", "rounds": 2}, format="json")
+        self.assertEqual(r.status_code, 201, r.data)
+        m = EqubMembership.objects.get(pk=mid)
+        self.assertEqual(m.prepaid_credit, Decimal("2000"))
+        equb.start_group(g)
+        m.refresh_from_db()
+        place = self.api.get(f"/api/agency/places/{mid}/").data
+        self.assertEqual(place["place"]["standing"]["paid_rounds"], 1)   # round 1 paid from the credit at once
+        self.assertEqual(m.prepaid_credit, Decimal("1000"))
+        self.assertEqual(self.api.get("/api/agency/dashboard/").data["counts"]["equb_places"], 1)
+
+    def test_other_agencies_places_are_hidden(self):
+        other, other_owner = make_agency(name="Other Tours")
+        c = APIClient(); c.force_authenticate(other_owner)
+        self.assertEqual(c.get("/api/agency/customers/").data, [])
+        self.assertEqual(APIClient().get("/api/agency/dashboard/").status_code, 401)

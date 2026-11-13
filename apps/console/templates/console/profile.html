@@ -17,7 +17,7 @@
     <div class="card-h"><h2>Personal details</h2></div>
     <form method="post">{% csrf_token %}<input type="hidden" name="form" value="profile">
       <div class="field"><label>Full name</label><input type="text" name="full_name" value="{{ request.user.full_name }}" required></div>
-      <div class="field"><label>Email</label><input type="email" name="email" value="{{ request.user.email }}" placeholder="you@vacation.et"></div>
+      <div class="field"><label>Email</label><input type="email" name="email" value="{{ request.user.email }}" placeholder="you@ethiovacation.et"></div>
       <div class="field"><label>Phone (login)</label><input type="text" value="{{ request.user.phone }}" disabled></div>
       <div class="field"><label>Referral code</label><input type="text" value="{{ request.user.referral_code }}" disabled></div>
       <button class="btn" type="submit">Save changes</button>

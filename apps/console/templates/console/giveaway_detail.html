@@ -16,7 +16,7 @@
   <div class="stats"><div><b>{{ g.referrals_count }}</b><span>Friends registered</span></div><div><b>{{ g.entries_issued }}</b><span>Free entries</span></div><div><b>{{ g.participants_count }}</b><span>Inviters</span></div><div><b>{{ g.referrals_per_entry }}</b><span>Friends = 1 entry</span></div></div>
 </div>
 
-<div class="note-box mt">Entry is free. Each person gets <b>one entry for every {{ g.referrals_per_entry }} friends</b> who register on Vacation Equb with their referral code between {{ g.starts_at|date:"d M, H:i" }} and {{ g.ends_at|date:"d M, H:i" }}{% if g.max_entries_per_user %}, up to {{ g.max_entries_per_user }} entries{% endif %}. The prize is paid by {{ g.sponsor_name }} – no donations or payments are involved.</div>
+<div class="note-box mt">Entry is free. Each person gets <b>one entry for every {{ g.referrals_per_entry }} friends</b> who register on EthioVacation with their referral code between {{ g.starts_at|date:"d M, H:i" }} and {{ g.ends_at|date:"d M, H:i" }}{% if g.max_entries_per_user %}, up to {{ g.max_entries_per_user }} entries{% endif %}. The prize is paid by {{ g.sponsor_name }} – no donations or payments are involved.</div>
 
 <div class="grid g-21 mt">
   <div class="card"><div class="card-h"><h2>Free entries earned per day</h2></div><div class="chart-box sm"><canvas data-chart="daily"></canvas></div></div>

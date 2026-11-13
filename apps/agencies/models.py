@@ -1,8 +1,8 @@
 """
-Travel agencies (partners) on Vacation Equb.
+Travel agencies (partners) on EthioVacation.
 
 An agency signs up its own customers (and their family members), enrols them in Equbs and books flights and
-packages for them through the platform. Every ticket sale is split: the agency keeps the sale, Vacation Equb keeps
+packages for them through the platform. Every ticket sale is split: the agency keeps the sale, EthioVacation keeps
 ``commission_percent`` (5 % by default). With a Chapa subaccount, Chapa settles the agency's share directly to the
 agency's bank account at payment time; otherwise the share is recorded as owed and paid out from the console.
 """
@@ -19,7 +19,7 @@ CENT = Decimal("0.01")
 
 
 def default_commission():
-    return Decimal(str(settings.VACATION.get("AGENCY_COMMISSION_PERCENT", 5)))
+    return Decimal(str(settings.ETHIOVACATION.get("AGENCY_COMMISSION_PERCENT", 5)))
 
 
 class Agency(TimeStampedModel):
@@ -40,7 +40,7 @@ class Agency(TimeStampedModel):
     commission_percent = models.DecimalField(
         max_digits=5, decimal_places=2, default=default_commission,
         validators=[MinValueValidator(Decimal("0")), MaxValueValidator(Decimal("50"))],
-        help_text="Vacation Equb's cut of every sale, taken from the agency's share.")
+        help_text="EthioVacation's cut of every sale, taken from the agency's share.")
 
     # Payout account → Chapa subaccount (Chapa sends the agency's share here automatically).
     bank_code = models.PositiveIntegerField(null=True, blank=True, help_text="Chapa bank id")
@@ -51,7 +51,7 @@ class Agency(TimeStampedModel):
                                            help_text="Set automatically when the Chapa subaccount is created")
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
                                    related_name="+")
-    notes = models.TextField(blank=True, help_text="Internal notes (only Vacation Equb staff see these)")
+    notes = models.TextField(blank=True, help_text="Internal notes (only EthioVacation staff see these)")
 
     class Meta:
         ordering = ["name"]
@@ -162,11 +162,11 @@ class FamilyMember(TimeStampedModel):
 
 class AgencyLedgerEntry(TimeStampedModel):
     """
-    One agency sale: what the customer paid, Vacation Equb's commission and the agency's share.
+    One agency sale: what the customer paid, EthioVacation's commission and the agency's share.
 
     * ``CHAPA_SPLIT`` – paid through a gateway. With a Chapa subaccount the agency's share was settled by Chapa;
-      otherwise it is owed and paid out by Vacation Equb.
-    * ``CREDIT_SALE`` – a booking paid with an Equb payout or a prize (money Vacation Equb already holds) – owed.
+      otherwise it is owed and paid out by EthioVacation.
+    * ``CREDIT_SALE`` – a booking paid with an Equb payout or a prize (money EthioVacation already holds) – owed.
     """
 
     class Kind(models.TextChoices):

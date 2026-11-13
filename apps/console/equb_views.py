@@ -23,7 +23,7 @@ from apps.equb import operations as ops
 from apps.equb import reports, services
 from apps.equb import standing as st
 from apps.equb import teams
-from apps.equb.models import (CallLog, Contribution, EqubDraw, GroupEqub, EqubGroup, EqubMembership, EqubPackage, EqubPayment, EqubPayout, EqubRound,
+from apps.equb.models import (MemberKYC, CallLog, Contribution, EqubDraw, GroupEqub, EqubGroup, EqubMembership, EqubPackage, EqubPayment, EqubPayout, EqubRound,
                               EqubSettings, Termination)
 from apps.equb.serializers import rules_summary
 from apps.equb.views import _payment_history
@@ -257,8 +257,7 @@ def equb_round(request, slug, number):
     contributions = list(rnd.contributions.select_related("membership__user", "payment_record").order_by("membership__position"))
     today = timezone.localdate()
     for c in contributions:
-        c.overdue = c.status in Contribution.UNSETTLED and today > rnd.due_date + timedelta(days=g.grace_days)
-        c.fee = st.pending_fee(c, g, today)
+        c.overdue = c.status in Contribution.UNSETTLED and today > c.due_date + timedelta(days=g.grace_days)
     ctx = {"nav": "equb_draws", "g": g, "r": rnd, "contributions": contributions,
            "paid": sum(1 for c in contributions if c.is_settled), "progress": pct(rnd.collected_amount, rnd.expected_amount),
            "drawn": hasattr(rnd, "draw") and rnd.draw.is_executed, "today": today}
@@ -396,10 +395,6 @@ def equb_member(request, pk):
                 "Exit approved – the place is closed.")
         elif a == "decline_exit":
             _do(request, lambda: ops.decline_exit_request(m, request.user, note=p.get("note", "")), "Exit request declined.")
-        elif a == "waive_fee":
-            c = m.contributions.filter(round_id=p.get("round_id") or 0).first()
-            if c:
-                _do(request, lambda: ops.waive_late_fee(c, request.user, reason=p.get("reason", "")), "Late fee waived.")
         elif a == "notes":
             m.notes = p.get("notes", "")
             m.save(update_fields=["notes", "updated_at"])
@@ -424,6 +419,7 @@ def equb_member(request, pk):
         p_["when"] = datetime.fromisoformat(when) if isinstance(when, str) else when
     return render(request, "console/equb_member.html", {
         "nav": "equb", "m": m, "g": m.group, "s": standing, "schedule": schedule, "plan": plan,
+        "kyc": MemberKYC.objects.filter(user_id=m.user_id).defer("photo", "id_front", "id_back").first(),
         "payments": payments, "calls": m.call_logs.select_related("called_by")[:30],
         "terminations": m.terminations.select_related("terminated_by", "reinstated_by"), "exit": ops.exit_info(m, standing),
         "payout": EqubPayout.objects.filter(membership=m).select_related("round", "booking").first(),
@@ -443,7 +439,7 @@ def equb_collections(request):
     members, standings = reports.live_standings(group_id=int(pool) if pool.isdigit() else None, search=q)
     rows = reports.debtors(members, standings, band=band, only_never_paid=never)
     if request.GET.get("export") == "csv":
-        return _csv(f"vacation-equb-arrears-{timezone.localdate()}.csv",
+        return _csv(f"ethiovacation-arrears-{timezone.localdate()}.csv",
                     ["Member", "Phone", "Equb", "Place", "Standing", "Missed rounds", "Days overdue", "Arrears (ETB)",
                      "Paid (ETB)", "Credit (ETB)", "Won", "Last called"],
                     [[r["m"].user.full_name, r["m"].user.phone, r["m"].group.name, r["m"].position, r["s"].status_label,
@@ -700,7 +696,7 @@ def equb_draws(request):
                     rows.append([timezone.localtime(d.executed_at).strftime("%Y-%m-%d %H:%M"), d.round.group.name,
                                  d.round.number, p.membership.user.full_name, p.membership.user.phone, p.amount,
                                  p.get_status_display(), d.get_mode_display(), len(d.eligible_memberships), p.voucher_code])
-            return _csv(f"vacation-equb-draws-{today}.csv", ["Drawn", "Equb", "Round", "Winner", "Phone", "Won (ETB)",
+            return _csv(f"ethiovacation-draws-{today}.csv", ["Drawn", "Equb", "Round", "Winner", "Phone", "Won (ETB)",
                                                           "Payout", "Mode", "Entries", "Voucher"], rows)
         ctx.update(page=_pager(request, qs), mode=mode)
     elif tab == "payouts":
@@ -800,7 +796,7 @@ def equb_rules(request):
     return _render(request, nav="settings", title="Equb rules", crumbs="Settings", form=form,
                    cancel=reverse("console:settings"), obj=obj,
                    intro="These rules apply to every Equb group: when members count as behind, when they leave the draw, "
-                         "reminders and the call-centre thresholds. Each group's own contribution, late fee and grace days "
+                         "reminders and the call-centre thresholds. Each group's own contribution and grace days "
                          "are set on the group.")
 
 
@@ -997,7 +993,7 @@ def equb_memberships(request):
     if request.GET.get("export") == "csv":
         items = list(qs)
         stand = st.standings_for(items)
-        return _csv(f"vacation-equb-memberships-{timezone.localdate()}.csv",
+        return _csv(f"ethiovacation-memberships-{timezone.localdate()}.csv",
                     ["Package", "Group", "Position", "Member", "Phone", "Contribution (ETB)", "Status", "Standing",
                      "Paid (ETB)", "Arrears (ETB)", "Won round", "Joined"],
                     ([m.group.equb_package.name if m.group.equb_package_id else "", m.group.name, m.position,

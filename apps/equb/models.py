@@ -16,7 +16,7 @@ class EqubSettings(models.Model):
     """
     The Equb rules in force across every pool (a single row, edited from the console).
 
-    Pool-specific money rules (contribution, late fee, grace days, service fee) live on
+    Pool-specific money rules (contribution, grace days, service fee) live on
     each pool; how strictly arrears are treated, reminders and call-centre thresholds are
     company policy and live here, so changing them takes effect everywhere at once.
     """
@@ -51,12 +51,10 @@ class EqubSettings(models.Model):
         max_digits=4, decimal_places=2, default=Decimal("2.00"),
         validators=[MinValueValidator(Decimal("0")), MaxValueValidator(Decimal("20"))],
         help_text="Kept from each winner's payout.")
-    late_fee = models.DecimalField(max_digits=10, decimal_places=2, default=0,
-                                   help_text="Added to a contribution once the grace days have passed (0 = no late fee).")
     grace_days = models.PositiveSmallIntegerField(default=3, help_text="Days after the due date before a payment is late.")
     require_paid_to_draw = models.BooleanField(default=True, help_text="Only members paid up for the round enter its draw.")
     payout_basis = models.CharField(max_length=10, default="FULL_POT",
-                                    choices=[("FULL_POT", "Full pot – Vacation Equb guarantees the payout"),
+                                    choices=[("FULL_POT", "Full pot – EthioVacation guarantees the payout"),
                                              ("COLLECTED", "Only what was collected by draw day")],
                                     help_text="What each winner receives.")
     auto_start_when_full = models.BooleanField(default=True, help_text="Start an Equb as soon as all its places are taken.")
@@ -229,7 +227,7 @@ class EqubGroup(TimeStampedModel):
         CANCELLED = "CANCELLED", "Cancelled"
 
     class PayoutBasis(models.TextChoices):
-        FULL_POT = "FULL_POT", "Full pot – Vacation Equb guarantees the payout"
+        FULL_POT = "FULL_POT", "Full pot – EthioVacation guarantees the payout"
         COLLECTED = "COLLECTED", "Only what was collected by draw day"
 
     equb_package = models.ForeignKey(EqubPackage, null=True, blank=True, on_delete=models.PROTECT,
@@ -251,6 +249,10 @@ class EqubGroup(TimeStampedModel):
         "Rounds drawn", null=True, blank=True, validators=[MinValueValidator(1), MaxValueValidator(10000)],
         help_text="How many draws the Equb has. Members ÷ rounds = winners in each draw. Empty = one draw per member.")
 
+    kyc_after_payments = models.PositiveSmallIntegerField(
+        "Eligibility form after (payments)", default=0, validators=[MaxValueValidator(1000)],
+        help_text="Members enter draws only after paying this many rounds AND sending the eligibility form (photo, "
+                  "national ID, monthly income) – the app asks for the form once they reach it. 0 = off.")
     service_fee_override = models.DecimalField(
         "Service fee (%)", max_digits=4, decimal_places=2, null=True, blank=True,
         validators=[MinValueValidator(Decimal("0")), MaxValueValidator(Decimal("20"))],
@@ -290,10 +292,6 @@ class EqubGroup(TimeStampedModel):
         if self.service_fee_override is not None:
             return self.service_fee_override
         return self.rules.service_fee_percent
-
-    @property
-    def late_fee(self) -> Decimal:
-        return self.rules.late_fee
 
     @property
     def grace_days(self) -> int:
@@ -530,7 +528,7 @@ class GroupEqub(TimeStampedModel):
 
 class GroupEqubInvite(TimeStampedModel):
     """
-    The owner asks a vacation customer (found by phone number) to join the group. Nothing happens until the
+    The owner asks a EthioVacation customer (found by phone number) to join the group. Nothing happens until the
     person accepts; then they get their own place in the Equb and pay their own contributions.
     """
 
@@ -596,8 +594,10 @@ class Contribution(TimeStampedModel):
     round = models.ForeignKey(EqubRound, on_delete=models.CASCADE, related_name="contributions")
     membership = models.ForeignKey(EqubMembership, on_delete=models.CASCADE, related_name="contributions")
     amount = models.DecimalField(max_digits=12, decimal_places=2)
-    late_fee = models.DecimalField(max_digits=10, decimal_places=2, default=0)
-    late_fee_waived = models.BooleanField(default=False)
+    # Members who join a running Equb also pay the rounds that ran before they joined ("catch-up" rounds).
+    # Those slips are due from the day they joined, not from the round's original due date.
+    catch_up_due = models.DateField(null=True, blank=True,
+                                    help_text="Due date for a round that ran before this member joined.")
     status = models.CharField(max_length=8, choices=Status.choices, default=Status.PENDING, db_index=True)
     paid_at = models.DateTimeField(null=True, blank=True)
     payment = models.ForeignKey("payments.PaymentTransaction", null=True, blank=True, on_delete=models.SET_NULL,
@@ -616,7 +616,12 @@ class Contribution(TimeStampedModel):
 
     @property
     def amount_due(self):
-        return self.amount + self.late_fee
+        """No late fees are ever charged (riba-free): what is due is exactly the contribution."""
+        return self.amount
+
+    @property
+    def due_date(self):
+        return self.catch_up_due or self.round.due_date
 
     @property
     def is_settled(self) -> bool:
@@ -630,7 +635,7 @@ def _receipt_no():
 class EqubPayment(TimeStampedModel):
     """
     Money paid towards one membership – through a gateway in the app, or recorded by staff
-    at the office. It settles the member's oldest unpaid rounds first (late fees included)
+    at the office. It settles the member's oldest unpaid rounds first (no late fees)
     and anything left over becomes credit for the next rounds.
     """
 
@@ -874,3 +879,46 @@ class JoinRequest(TimeStampedModel):
 
     def __str__(self):
         return f"{self.user} → {self.group} ({self.status})"
+
+
+def _kyc_photo_note():
+    return "Stored in the database (not public). Only staff can open it from the console."
+
+
+class MemberKYC(TimeStampedModel):
+    """
+    The draw eligibility form: a photo of the member, their national ID and monthly income.
+    One per customer, used for every Equb they are in. Images live in the database so they are never public.
+    """
+
+    class Status(models.TextChoices):
+        SUBMITTED = "SUBMITTED", "Waiting for review"
+        APPROVED = "APPROVED", "Approved"
+        REJECTED = "REJECTED", "Rejected – must send again"
+
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="equb_kyc")
+    photo = models.BinaryField(help_text=_kyc_photo_note())
+    photo_type = models.CharField(max_length=40, default="image/jpeg")
+    id_front = models.BinaryField()
+    id_front_type = models.CharField(max_length=40, default="image/jpeg")
+    id_back = models.BinaryField(null=True, blank=True)
+    id_back_type = models.CharField(max_length=40, blank=True)
+    national_id_number = models.CharField(max_length=40, blank=True)
+    monthly_income = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(Decimal("0"))])
+    income_source = models.CharField(max_length=120, blank=True, help_text="Job / business")
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.SUBMITTED, db_index=True)
+    reviewed_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
+                                    related_name="+")
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    review_note = models.CharField(max_length=255, blank=True)
+
+    class Meta:
+        ordering = ["-updated_at"]
+        verbose_name = "eligibility form"
+
+    def __str__(self):
+        return f"Eligibility form – {self.user} ({self.get_status_display()})"
+
+    @property
+    def counts_for_draws(self) -> bool:
+        return self.status in (self.Status.SUBMITTED, self.Status.APPROVED)

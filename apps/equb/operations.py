@@ -59,21 +59,6 @@ def postpone_draw(rnd: EqubRound, staff, *, new_date: date, reason: str, notify_
     return rnd
 
 
-# --------------------------------------------------------------------------- fees
-@transaction.atomic
-def waive_late_fee(c: Contribution, staff, *, reason: str = "") -> Contribution:
-    c = Contribution.objects.select_for_update().select_related("membership__user", "round__group").get(pk=c.pk)
-    if c.is_settled:
-        raise BusinessRuleError("This contribution is already paid.")
-    if not c.late_fee and c.late_fee_waived:
-        raise BusinessRuleError("The late fee has already been waived.")
-    c.late_fee = Decimal("0")
-    c.late_fee_waived = True
-    c.note = (f"Late fee waived by {staff.full_name}" + (f": {reason.strip()}" if reason.strip() else ""))[:160]
-    c.save(update_fields=["late_fee", "late_fee_waived", "note", "updated_at"])
-    return c
-
-
 # --------------------------------------------------------------------------- exit requests
 def exit_info(m: EqubMembership, st: standing_mod.Standing | None = None) -> dict:
     """Can this member leave, ask to leave, or neither – and why."""
@@ -215,7 +200,7 @@ def terminate(m: EqubMembership, staff, *, reason: str, note: str = "", notify_m
         why = {"NON_PAYMENT": "because contributions were not paid", "MEMBER_REQUEST": "as you requested",
                "UNREACHABLE": "because we could not reach you"}.get(reason, "")
         notify(m.user, Notification.Kind.EQUB_REMINDER, f"Your place in {m.group.name} was cancelled",
-               f"Your Equb place has been cancelled {why}".strip() + ". Please contact Vacation Equb support "
+               f"Your Equb place has been cancelled {why}".strip() + ". Please contact EthioVacation support "
                "about any contributions you have paid or still owe.", {"equb": m.group.slug, "membership": m.id})
     return t
 

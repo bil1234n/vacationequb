@@ -21,22 +21,23 @@
     <div class="card-h"><h2>Customer</h2></div>
     <dl class="kv"><dt>Phone</dt><dd class="mono">{{ c.user.phone }}</dd><dt>Email</dt><dd>{{ c.user.email|default:"—" }}</dd>
       <dt>Customer since</dt><dd>{{ c.created_at|date:"d M Y" }}</dd>
-      <dt>App access</dt><dd>{% if c.user.has_usable_password %}<span class="badge b-green">Can sign in to the app</span>{% else %}<span class="badge b-grey">No password yet</span>{% endif %}</dd></dl>
+      <dt>App access</dt><dd>{% if c.user.has_usable_password %}<span class="badge b-green">Can sign in to the app</span>{% else %}<span class="badge b-grey">No PIN yet</span>{% endif %}</dd></dl>
     {% if not c.user.has_usable_password %}
     <form method="post" style="margin-top:14px">{% csrf_token %}<input type="hidden" name="action" value="password">
-      <div class="field"><label>Give app access – set a password</label><input type="password" name="password" minlength="6" placeholder="At least 6 characters"></div>
-      <button class="btn ghost sm">Set password</button></form>{% endif %}
+      <div class="field"><label>Give app access – set a 6-digit PIN</label><input type="password" name="password" minlength="6" maxlength="6" inputmode="numeric" pattern="[0-9]{6}" placeholder="6 numbers"></div>
+      <button class="btn ghost sm">Set PIN</button></form>{% endif %}
     <form method="post" style="margin-top:14px">{% csrf_token %}<input type="hidden" name="action" value="notes">
       <div class="field"><label>Notes</label><textarea name="notes" rows="3">{{ c.notes }}</textarea></div><button class="btn ghost sm">Save notes</button></form>
   </div>
 </div>
 <div class="grid g-2 mt">
   <div class="card"><div class="card-h"><h2>Equb places</h2><a class="btn ghost sm" href="{% url 'agency:equbs' %}?customer={{ c.pk }}">+ Join an Equb</a></div>
-    <div class="table-wrap"><table class="t"><thead><tr><th>Equb</th><th>Place</th><th>For</th><th>Status</th><th class="r">Paid</th></tr></thead><tbody>
-    {% for m in places %}<tr><td class="strong">{{ m.group.name }}<div class="small muted">{{ m.group.contribution_amount|money }} {{ m.group.frequency_days|every }}</div></td><td class="num">#{{ m.position }}</td>
+    <div class="table-wrap"><table class="t"><thead><tr><th>Equb</th><th>Place</th><th>For</th><th>Status</th><th class="r">Paid</th><th></th></tr></thead><tbody>
+    {% for m in places %}<tr><td class="strong" style="min-width:150px">{{ m.group.name }}<div class="small muted">{{ m.group.contribution_amount|money }} {{ m.group.frequency_days|every }}</div></td><td class="num">#{{ m.position }}</td>
       <td>{% if m.dependent_name %}{{ m.dependent_name }} <span class="small muted">(paid by {{ c.user.first_name }})</span>{% else %}{{ c.user.first_name }}{% endif %}</td>
-      <td>{{ m.status|status_badge }}{% if m.has_won %} 🏆{% endif %}</td><td class="r num">{{ m.total_paid|money }}</td></tr>
-    {% empty %}<tr><td colspan="5" class="empty">Not in any Equb yet.</td></tr>{% endfor %}</tbody></table></div>
+      <td>{{ m.status|status_badge }}{% if m.has_won %} 🏆{% endif %}</td><td class="r num">{{ m.total_paid|money }}{% if m.prepaid_credit %}<div class="small muted">+{{ m.prepaid_credit|money }} credit</div>{% endif %}</td>
+      <td class="r"><a class="btn sm" href="{% url 'agency:place' m.pk %}">Pay</a></td></tr>
+    {% empty %}<tr><td colspan="6" class="empty">Not in any Equb yet.</td></tr>{% endfor %}</tbody></table></div>
   </div>
   <div class="card"><div class="card-h"><h2>Trips</h2><a class="btn ghost sm" href="{% url 'agency:book' %}?customer={{ c.pk }}">+ Book</a></div>
     <div class="table-wrap"><table class="t"><thead><tr><th>Ref</th><th>Trip</th><th>Status</th><th class="r">Total</th></tr></thead><tbody>

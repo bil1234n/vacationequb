@@ -28,7 +28,11 @@ class CrowdfundingCampaignSerializer(serializers.ModelSerializer):
 
 class DonateSerializer(serializers.Serializer):
     amount = serializers.IntegerField(min_value=1)
-    kind = serializers.ChoiceField(choices=Donation.Kind.choices, default=Donation.Kind.SADAQAH)
+    # Every gift is simply a donation. Older app versions still send SADAQAH / HIBAH – those are accepted too.
+    kind = serializers.ChoiceField(choices=[Donation.Kind.DONATION, "SADAQAH", "HIBAH"], default=Donation.Kind.DONATION)
+
+    def validate_kind(self, value):
+        return Donation.Kind.DONATION
     provider = serializers.ChoiceField(choices=["telebirr", "chapa", "mock"], required=False)
     payer_phone = serializers.CharField(required=False, allow_blank=True, max_length=16)
     is_anonymous = serializers.BooleanField(default=False)

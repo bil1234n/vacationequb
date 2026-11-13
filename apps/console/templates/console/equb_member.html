@@ -36,14 +36,13 @@
 <div class="grid g-21 mt">
   <div class="card" id="schedule">
     <div class="card-h"><h2>Payment schedule</h2><span>{{ s.paid_rounds }} of {{ s.total_rounds }} rounds paid</span></div>
-    <div class="table-wrap"><table class="t"><thead><tr><th>Round</th><th>Due</th><th>Status</th><th>Paid</th><th>Receipt</th><th class="r">Late fee</th><th class="r">Amount</th><th></th></tr></thead><tbody>
+    <div class="table-wrap"><table class="t"><thead><tr><th>Round</th><th>Due</th><th>Status</th><th>Paid</th><th>Receipt</th><th class="r">Amount</th></tr></thead><tbody>
     {% for row in schedule %}<tr class="{% if row.state == 'overdue' %}critical{% endif %}">
       <td class="strong">R{{ row.round }}{% if row.you_won %} 🏆{% endif %}</td><td class="small" style="white-space:nowrap">{{ row.due|date:"d M Y" }}</td>
       <td>{{ row.state|schedule_badge }}{% if row.winners and not row.you_won %}<div class="small muted">Winner: {{ row.winners|join:", " }}</div>{% endif %}</td>
       <td class="small" style="white-space:nowrap">{{ row.paid|date:"d M Y"|default:"—" }}</td><td class="mono small">{{ row.receipt|default:"—" }}</td>
-      <td class="r num">{% if row.late_fee != "0.00" %}{{ row.late_fee|money }}{% else %}—{% endif %}</td><td class="r num">{{ row.amount|money }}</td>
-      <td class="r">{% if row.late_fee != "0.00" and row.state == 'overdue' %}<button class="btn ghost xs" data-open="waive-dialog" data-fill='{"round_id":"{{ row.round_id }}","round_label":"Round {{ row.round }}"}'>Waive fee</button>{% endif %}</td></tr>
-    {% empty %}<tr><td colspan="8" class="empty">The schedule appears when the Equb starts.</td></tr>{% endfor %}</tbody></table></div>
+      <td class="r num">{{ row.amount|money }}{% if row.catch_up %}<div class="small muted">catch-up round</div>{% endif %}</td></tr>
+    {% empty %}<tr><td colspan="6" class="empty">The schedule appears when the Equb starts.</td></tr>{% endfor %}</tbody></table></div>
   </div>
   <div>
     <div class="card">
@@ -56,7 +55,7 @@
         <dt>Next payment</dt><dd>{% if s.next_due_date %}R{{ s.next_due_round }} · {{ s.next_due_date|date:"d M Y" }} · {% if s.next_due_covered %}covered by credit{% else %}{{ s.next_due_amount|money }}{% endif %}{% else %}—{% endif %}</dd>
         <dt>Owes now</dt><dd>{{ s.owes|money }}{% if s.due_now %} <span class="small muted">({{ s.due_now|money }} not yet late)</span>{% endif %}</dd>
         <dt>Still to pay</dt><dd>{{ s.remaining_amount|money }} <span class="small muted">over the rest of the cycle</span></dd>
-        <dt>Late fees paid</dt><dd>{{ s.fees_paid|money }}</dd>
+        {% if g.kyc_after_payments %}<dt>Eligibility form</dt><dd>{% if kyc %}<a href="{% url 'console:kyc_detail' kyc.pk %}">{{ kyc.get_status_display }}</a>{% else %}<span class="muted">Not sent</span>{% endif %} <span class="small muted">· needed after {{ g.kyc_after_payments }} payment{{ g.kyc_after_payments|pluralize }}</span></dd>{% endif %}
         <dt>Called</dt><dd>{% if m.called_at %}{{ m.called_at|date:"d M, H:i" }} by {{ m.called_by.full_name|default:"staff" }}{% else %}Not yet{% endif %}
           <form method="post" style="display:inline">{% csrf_token %}<input type="hidden" name="action" value="toggle_called"><button class="btn {% if m.called_at %}called{% else %}uncalled{% endif %} xs">{% if m.called_at %}Called ✓{% else %}Uncalled{% endif %}</button></form></dd>
       </dl>
@@ -114,7 +113,7 @@
 <dialog class="modal" id="pay-dialog"><form method="post">{% csrf_token %}<input type="hidden" name="action" value="record_payment">
   <div class="modal-h"><h3>Record a payment</h3><button type="button" class="x" data-close>&times;</button></div>
   <div class="modal-b">
-    <p class="small muted" style="margin-top:0">Money settles the oldest unpaid round first (late fees included); anything extra becomes credit for the next rounds.{% if plan.credit != "0.00" %} Current credit: {{ plan.credit|money }}.{% endif %}</p>
+    <p class="small muted" style="margin-top:0">Money settles the oldest unpaid round first (no late fees); anything extra becomes credit for the next rounds.{% if plan.credit != "0.00" %} Current credit: {{ plan.credit|money }}.{% endif %}</p>
     <div class="row-2">
       <div class="field"><label>Method</label><select name="method">{% for v, l in methods %}<option value="{{ v }}">{{ l }}</option>{% endfor %}</select></div>
       <div class="field"><label>Covers</label><select name="rounds" data-rounds>
@@ -165,11 +164,7 @@
   <div class="modal-f"><button type="button" class="btn ghost" data-close>Cancel</button><button class="btn">Decline request</button></div>
 </form></dialog>
 
-<dialog class="modal" id="waive-dialog"><form method="post">{% csrf_token %}<input type="hidden" name="action" value="waive_fee"><input type="hidden" name="round_id">
-  <div class="modal-h"><h3>Waive late fee – <span data-text="round_label"></span></h3><button type="button" class="x" data-close>&times;</button></div>
-  <div class="modal-b"><div class="field"><label>Reason</label><input type="text" name="reason" maxlength="120" placeholder="e.g. Bank outage on the due date"></div></div>
-  <div class="modal-f"><button type="button" class="btn ghost" data-close>Cancel</button><button class="btn">Waive fee</button></div>
-</form></dialog>
+
 
 {% if payout and payout.status == 'ISSUED' %}
 <dialog class="modal" id="payout-dialog"><form method="post">{% csrf_token %}<input type="hidden" name="action" value="paid_out">

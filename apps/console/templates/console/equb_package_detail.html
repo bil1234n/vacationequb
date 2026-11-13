@@ -41,7 +41,7 @@
     <dl class="kv">
       <dt>Status</dt><dd>{% if p.is_active %}Active{% else %}Inactive{% endif %}</dd>
     </dl>
-    <p class="small muted">Fees, late fees and draw rules are the same for every Equb – <a href="{% url 'console:equb_rules' %}">Equb rules</a>.</p>
+    <p class="small muted">Fees and draw rules are the same for every Equb – <a href="{% url 'console:equb_rules' %}">Equb rules</a>.</p>
     {% if terms %}<hr style="border:0;border-top:1px solid var(--line);margin:16px 0"><div class="small strong" style="margin-bottom:6px">Terms and conditions</div>
     <details class="terms-view"><summary class="small">Read the agreement ({{ terms|length }} part{{ terms|length|pluralize }})</summary>
       <div class="terms-doc" style="margin-top:12px;max-height:520px;overflow:auto;padding:18px 20px;background:#FDFCF8;border:1px solid var(--line);border-radius:12px">{{ p.terms_content|terms_html }}</div>

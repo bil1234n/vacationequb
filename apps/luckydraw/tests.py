@@ -32,7 +32,7 @@ class CrowdfundingTests(TestCase):
         q = api.get(f"/api/community/crowdfunding/{self.c.slug}/quote/?amount=100").data
         self.assertEqual((q["amount"], q["fee"], q["total"]), ("100.00", "5.00", "105.00"))
         r = api.post(f"/api/community/crowdfunding/{self.c.slug}/donate/",
-                     {"amount": 100, "kind": "HIBAH", "provider": "mock", "message": "Dua for you"}, format="json")
+                     {"amount": 100, "kind": "DONATION", "provider": "mock", "message": "Dua for you"}, format="json")
         self.assertEqual(r.status_code, 201, r.data)
         self.assertEqual(Decimal(r.data["payment"]["amount"]), Decimal("105"))
         self.assertEqual(r.data["payment"]["purpose"], "DONATION")
@@ -76,7 +76,7 @@ class GiveawayTests(TestCase):
 
     def signup(self, i):
         r = APIClient().post("/api/auth/register/", {"phone": f"09770{i:05d}", "full_name": f"Friend {i}",
-                                                     "password": "Str0ng-pass-123", "referral_code": self.inviter.referral_code},
+                                                     "password": "583920", "referral_code": self.inviter.referral_code},
                              format="json")
         assert r.status_code == 201, r.data
 

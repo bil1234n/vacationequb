@@ -64,9 +64,9 @@ def passenger(seat=None, **kw):
     return data
 
 
-RULE_FIELDS = ("service_fee_percent", "late_fee", "grace_days", "require_paid_to_draw", "payout_basis",
+RULE_FIELDS = ("service_fee_percent", "grace_days", "require_paid_to_draw", "payout_basis",
                "auto_start_when_full")
-GONE_FIELDS = ("destination", "package", "description", "payout_type", "is_public", "kind", "image_url",
+GONE_FIELDS = ("late_fee", "destination", "package", "description", "payout_type", "is_public", "kind", "image_url",
                "min_members_to_start", "winners_per_round")
 
 
